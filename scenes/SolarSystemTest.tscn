@@ -2,13 +2,7 @@
 
 [ext_resource type="Script" path="res://scripts/SolarSystem.gd" id="1_solar"]
 [ext_resource type="Script" path="res://scripts/DebugCamera.gd" id="2_cam"]
-
-[sub_resource type="Environment" id="Env_1"]
-background_mode = 1
-background_color = Color(0.01, 0.01, 0.03, 1)
-ambient_light_source = 2
-ambient_light_color = Color(0.25, 0.25, 0.3, 1)
-ambient_light_energy = 0.4
+[ext_resource type="Script" path="res://scripts/SpaceEnvironment.gd" id="3_env"]
 
 [node name="SolarSystemTest" type="Node3D"]
 
@@ -19,4 +13,4 @@ script = ExtResource("1_solar")
 script = ExtResource("2_cam")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
-environment = SubResource("Env_1")
+script = ExtResource("3_env")
