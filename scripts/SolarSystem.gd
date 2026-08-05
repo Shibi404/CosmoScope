@@ -6,11 +6,16 @@ extends Node3D
 ## modes differ only in their camera and interaction, never in content.
 
 const SolarSystemData := preload("res://data/planets.gd")
+const PLANET_SHADER := preload("res://shaders/planet.gdshader")
+const SUN_SHADER := preload("res://shaders/sun.gdshader")
+const RING_SHADER := preload("res://shaders/ring.gdshader")
 
 ## Toggle orbital motion (e.g. pause for inspection).
 @export var orbit_enabled: bool = true
 ## Global multiplier on orbit + spin speed.
 @export var time_scale: float = 1.0
+## Draw faint circular orbit paths in the ecliptic plane.
+@export var show_orbits: bool = true
 
 # One entry per planet: { pivot, planet, orbit_speed, spin_speed }.
 var _orbits: Array[Dictionary] = []
@@ -25,10 +30,11 @@ func _process(delta: float) -> void:
 	var step := delta * time_scale
 	for o in _orbits:
 		o.pivot.rotate_y(deg_to_rad(o.orbit_speed) * step)
-		o.planet.rotate_y(deg_to_rad(o.spin_speed) * step)
+		# Spin about the planet's own (tilted) axis.
+		o.planet.rotate_object_local(Vector3.UP, deg_to_rad(o.spin_speed) * step)
 
 func _build_sun() -> void:
-	var sun := _make_sphere(SolarSystemData.SUN.radius, SolarSystemData.SUN.color, true)
+	var sun := _make_sphere(SolarSystemData.SUN.radius, _sun_material())
 	sun.name = "Sun"
 	add_child(sun)
 
@@ -40,16 +46,23 @@ func _build_sun() -> void:
 
 func _build_planets() -> void:
 	for data in SolarSystemData.PLANETS:
+		if show_orbits:
+			_build_orbit_line(data.distance)
+
 		# A pivot at the Sun; rotating it sweeps the planet around its orbit.
 		var pivot := Node3D.new()
 		pivot.name = "%sPivot" % data.name
 		add_child(pivot)
 
-		var planet := _make_sphere(data.radius, data.color, false)
+		var planet := _make_sphere(data.radius, _planet_material(data))
 		planet.name = data.name
 		planet.position = Vector3(data.distance, 0.0, 0.0)
+		planet.rotation.z = deg_to_rad(data.tilt)  # axial tilt
 		planet.set_meta("fact", data.fact)
 		pivot.add_child(planet)
+
+		if data.name == "Saturn":
+			_add_rings(planet, data.radius)
 
 		# Randomise start angle so the planets aren't lined up.
 		pivot.rotate_y(randf() * TAU)
@@ -61,19 +74,63 @@ func _build_planets() -> void:
 			"spin_speed": data.spin_speed,
 		})
 
-func _make_sphere(radius: float, color: Color, emissive: bool) -> MeshInstance3D:
+func _add_rings(planet: Node3D, planet_radius: float) -> void:
+	# A flat quad in the planet's equatorial plane; the ring shader carves it
+	# into a banded annulus. Parented to the planet so it inherits the tilt.
+	var size := planet_radius * 6.0
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(size, size)
+
+	var mat := ShaderMaterial.new()
+	mat.shader = RING_SHADER
+
+	var rings := MeshInstance3D.new()
+	rings.name = "Rings"
+	rings.mesh = plane
+	rings.material_override = mat
+	planet.add_child(rings)
+
+func _build_orbit_line(radius: float) -> void:
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = Color(0.4, 0.45, 0.6, 0.25)
+
+	var im := ImmediateMesh.new()
+	im.surface_begin(Mesh.PRIMITIVE_LINE_STRIP, mat)
+	var segments := 128
+	for i in segments + 1:
+		var a := TAU * float(i) / float(segments)
+		im.surface_add_vertex(Vector3(cos(a) * radius, 0.0, sin(a) * radius))
+	im.surface_end()
+
+	var line := MeshInstance3D.new()
+	line.name = "Orbit%d" % int(radius)
+	line.mesh = im
+	add_child(line)
+
+func _planet_material(data: Dictionary) -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = PLANET_SHADER
+	mat.set_shader_parameter("color_a", data.color)
+	mat.set_shader_parameter("color_b", data.color2)
+	mat.set_shader_parameter("banded", data.banded)
+	return mat
+
+func _sun_material() -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = SUN_SHADER
+	mat.set_shader_parameter("hot", SolarSystemData.SUN.color)
+	return mat
+
+func _make_sphere(radius: float, material: Material) -> MeshInstance3D:
 	var mesh := SphereMesh.new()
 	mesh.radius = radius
 	mesh.height = radius * 2.0
-
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	if emissive:
-		mat.emission_enabled = true
-		mat.emission = color
-		mat.emission_energy_multiplier = 1.5
+	mesh.radial_segments = 48
+	mesh.rings = 24
 
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
-	mi.material_override = mat
+	mi.material_override = material
 	return mi

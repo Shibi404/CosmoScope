@@ -4,3 +4,6 @@
 
 # JetBrains IDE
 .idea/
+
+# Godot script UID sidecars (our resources reference by path, not UID)
+*.uid
