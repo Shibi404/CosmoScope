@@ -22,6 +22,15 @@ const LENS_SHADER := preload("res://shaders/lens_distortion.gdshader")
 @export var gaze_angle_deg: float = 6.0
 @export var reticle_distance: float = 3.0
 
+# --- Gyro mapping (tuned against real device readings) ---
+## Which gyroscope component drives yaw / pitch (0=x, 1=y, 2=z).
+@export_range(0, 2) var gyro_yaw_axis: int = 1
+@export_range(0, 2) var gyro_pitch_axis: int = 0
+@export var gyro_yaw_sign: float = 1.0
+@export var gyro_pitch_sign: float = 1.0
+## Show a live sensor readout on screen (debugging aid).
+@export var debug_sensors: bool = false
+
 var _left_viewport: SubViewport
 var _right_viewport: SubViewport
 var _left_cam: Camera3D
@@ -29,7 +38,6 @@ var _right_cam: Camera3D
 var _left_rect: TextureRect
 var _right_rect: TextureRect
 
-var _solar: Node3D
 var _reticle: MeshInstance3D
 var _info_label: Label3D
 var _planets: Array[Node3D] = []
@@ -39,13 +47,28 @@ var _yaw: float = 0.0
 var _pitch: float = 0.0
 var _gazed: Node3D = null
 var _dwell: float = 0.0
+var _debug_label: Label = null
 
 func _ready() -> void:
 	_build_eyes()
 	_build_world()
 	_build_gaze_ui()
+	_build_debug()
 	_layout()
 	get_viewport().size_changed.connect(_layout)
+
+func _build_debug() -> void:
+	if not debug_sensors:
+		return
+	var layer := CanvasLayer.new()
+	add_child(layer)
+	_debug_label = Label.new()
+	_debug_label.position = Vector2(14, 14)
+	_debug_label.add_theme_font_size_override("font_size", 22)
+	_debug_label.add_theme_color_override("font_color", Color(0.4, 1.0, 0.5))
+	_debug_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	_debug_label.add_theme_constant_override("outline_size", 6)
+	layer.add_child(_debug_label)
 
 func _build_eyes() -> void:
 	_left_viewport = _make_eye_viewport()
@@ -88,10 +111,10 @@ func _build_world() -> void:
 	env.set_script(SpaceEnvScript)
 	_left_viewport.add_child(env)
 
-	_solar = Node3D.new()
-	_solar.set_script(SolarSystemScript)
-	_left_viewport.add_child(_solar)
-	_planets = _solar.get_planet_bodies()
+	var solar := Node3D.new()
+	solar.set_script(SolarSystemScript)
+	_left_viewport.add_child(solar)
+	_planets = solar.get_planet_bodies()
 
 func _build_gaze_ui() -> void:
 	_reticle = MeshInstance3D.new()
@@ -136,19 +159,27 @@ func _process(delta: float) -> void:
 	_update_orientation(delta)
 	_update_cameras()
 	_update_gaze(delta)
+	_update_debug()
 
 func _update_orientation(delta: float) -> void:
-	var gyro := Input.get_gyroscope() if use_gyroscope else Vector3.ZERO
-	if use_gyroscope and gyro.length() > 0.0001:
-		# Integrate angular velocity (rad/s) in the head's own frame.
-		# Axis signs may need per-device tuning.
-		_orientation = _orientation.rotated(_orientation.x, -gyro.x * delta)
-		_orientation = _orientation.rotated(_orientation.y, -gyro.y * delta)
-		_orientation = _orientation.rotated(_orientation.z, -gyro.z * delta)
-		_orientation = _orientation.orthonormalized()
-	else:
-		# Desktop/editor fallback: drag to look.
-		_orientation = Basis(Vector3.UP, _yaw) * Basis(Vector3.RIGHT, _pitch)
+	# Unified yaw/pitch model: the gyroscope integrates into the same _yaw and
+	# _pitch that mouse-drag drives, so desktop and device share one code path
+	# and there is no roll drift.
+	if use_gyroscope:
+		var g := Input.get_gyroscope()
+		_yaw += g[gyro_yaw_axis] * gyro_yaw_sign * delta
+		_pitch += g[gyro_pitch_axis] * gyro_pitch_sign * delta
+	_pitch = clampf(_pitch, -1.5, 1.5)
+	_orientation = Basis(Vector3.UP, _yaw) * Basis(Vector3.RIGHT, _pitch)
+
+func _update_debug() -> void:
+	if _debug_label == null:
+		return
+	var g := Input.get_gyroscope()
+	var a := Input.get_accelerometer()
+	_debug_label.text = "gyro  x %+5.2f  y %+5.2f  z %+5.2f\naccel x %+5.2f  y %+5.2f  z %+5.2f\nyaw %+5.2f  pitch %+5.2f" % [
+		g.x, g.y, g.z, a.x, a.y, a.z, _yaw, _pitch
+	]
 
 func _update_cameras() -> void:
 	var right := _orientation.x
