@@ -15,7 +15,8 @@ Two modes solve two halves of that one problem:
 - **Renderer is Mobile (Vulkan).** Do not switch to Forward+ — it will not run acceptably on target phones. Compatibility renderer is the only acceptable fallback (older devices / AR plugin issues).
 - **VR is DIY, not OpenXR.** Because there is no headset, VR is built by hand: two `Camera3D` nodes rendering to a split-screen viewport, a barrel/lens-distortion shader, and head-tracking from the phone's sensors (`Input.get_gyroscope()`, `get_accelerometer()`, `get_magnetometer()`). OpenXR is irrelevant here. Interaction is gaze + dwell (or screen tap / Cardboard button).
 - **AR is the highest-risk part.** Godot 4.x mobile AR depends on a community ARCore/ARKit plugin. Keep AR scope minimal: plane detection + tap-to-place only. If the plugin is uncooperative, fall back to marker-based AR (printed image → model).
-- **Language is undecided (C# vs GDScript).** The project was scaffolded as a **.NET/C# project** (`project.godot` has a `[dotnet]` section, `assembly_name="CosmoScope"`), but no `.csproj`/`.sln` exists yet. GDScript is recommended (no build step, far more XR tutorials). Confirm the choice with the user before writing gameplay scripts.
+- **Language is GDScript.** Originally scaffolded as .NET/C#; the `[dotnet]` section was removed from `project.godot`. Write all scripts in GDScript.
+- **Target platform is Android** (ARCore), built from Windows. iOS is not a target.
 
 ## Planned build order
 
