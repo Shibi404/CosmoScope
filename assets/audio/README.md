@@ -1,8 +1,8 @@
 # Audio
 
-Drop a background music track here named **`theme.ogg`** (preferred), or
-`theme.mp3` / `theme.wav`. The `MusicPlayer` autoload finds and loops it
-automatically on load.
+Current track: **`spacetheme.mp3`** (played + looped by the `MusicPlayer`
+autoload on load).
 
-Use royalty-free music only (e.g. Kevin MacLeod / incompetech, Pixabay,
-OpenGameArt). **OGG** loops most seamlessly.
+To change it, replace this file or drop a new one — the player also looks for
+`theme.ogg` / `theme.mp3` / `theme.wav`. Use royalty-free music only. **OGG**
+loops most seamlessly.

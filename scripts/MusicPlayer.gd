@@ -7,12 +7,13 @@ extends AudioStreamPlayer
 ## present the app simply runs silently (no error).
 
 const CANDIDATES := [
+	"res://assets/audio/spacetheme.mp3",
 	"res://assets/audio/theme.ogg",
 	"res://assets/audio/theme.mp3",
 	"res://assets/audio/theme.wav",
 ]
 
-@export var music_volume_db: float = -12.0
+@export var music_volume_db: float = 6.0
 
 func _ready() -> void:
 	volume_db = music_volume_db
