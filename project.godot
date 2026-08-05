@@ -15,6 +15,10 @@ run/main_scene="res://scenes/VRScene.tscn"
 config/features=PackedStringArray("4.7", "Mobile")
 config/icon="res://icon.svg"
 
+[autoload]
+
+Music="*res://scripts/MusicPlayer.gd"
+
 [display]
 
 window/stretch/mode="canvas_items"
