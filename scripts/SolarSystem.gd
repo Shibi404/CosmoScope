@@ -74,6 +74,13 @@ func _build_planets() -> void:
 			"spin_speed": data.spin_speed,
 		})
 
+## Planet body nodes, for gaze/selection by the VR and AR modes.
+func get_planet_bodies() -> Array[Node3D]:
+	var bodies: Array[Node3D] = []
+	for o in _orbits:
+		bodies.append(o.planet)
+	return bodies
+
 func _add_rings(planet: Node3D, planet_radius: float) -> void:
 	# A flat quad in the planet's equatorial plane; the ring shader carves it
 	# into a banded annulus. Parented to the planet so it inherits the tilt.

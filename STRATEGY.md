@@ -58,12 +58,13 @@ res://
 - [x] `SolarSystem.gd`: spawn spheres + orbit animation
 - [x] `SolarSystemTest.tscn` test scene + `DebugCamera.gd` (mouse-orbit/zoom), set as main scene
 
-### Phase 1 — VR mode (do first: lowest risk, no plugins)
-- [ ] Dual-camera split-screen viewport setup
-- [ ] `lens_distortion.gdshader` for the Cardboard lenses
-- [ ] Gyro head-tracking (`VRCamera.gd`)
-- [ ] Gaze + dwell selection showing a planet info card
+### Phase 1 — VR mode (do first: lowest risk, no plugins) — **done**
+- [x] Dual-camera split-screen viewport setup (`VRRig.gd`: two SubViewports sharing one world)
+- [x] `lens_distortion.gdshader` for the Cardboard lenses
+- [x] Gyro head-tracking + desktop mouse-look fallback
+- [x] Gaze + dwell selection showing a Label3D info card
 - **Done when:** you can look around the solar system in a Cardboard holder and select a planet.
+- Note: gyro axis/sign mapping is untested on a physical device — may need tuning.
 
 ### Phase 2 — Mode-select menu
 - [ ] `Menu.tscn` with AR / VR buttons, landscape layout
