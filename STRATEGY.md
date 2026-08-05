@@ -53,9 +53,10 @@ res://
 
 ### Phase 0 — Foundations
 - [x] Confirm GDScript vs C# → **GDScript**
-- [ ] Folder structure + `.gitattributes` for Godot binary/text
-- [ ] `planets` data table (radius/distance scaled for readability, not true-to-life)
-- [ ] `SolarSystem.gd`: spawn spheres + orbit animation (test in a plain 3D scene first)
+- [x] Folder structure (`data/`, `scripts/`, `scenes/`, `shaders/`, `assets/`)
+- [x] `planets` data table (radius/distance scaled for readability, not true-to-life)
+- [x] `SolarSystem.gd`: spawn spheres + orbit animation
+- [x] `SolarSystemTest.tscn` test scene + `DebugCamera.gd` (mouse-orbit/zoom), set as main scene
 
 ### Phase 1 — VR mode (do first: lowest risk, no plugins)
 - [ ] Dual-camera split-screen viewport setup
