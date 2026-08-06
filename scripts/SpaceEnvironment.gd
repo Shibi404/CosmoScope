@@ -9,9 +9,15 @@ extends WorldEnvironment
 ## 0 disables the faint nebula clouds.
 @export var nebula_strength: float = 0.5
 
+const MILKY_WAY := "res://assets/textures/2k_stars_milky_way.jpg"
+
 func _ready() -> void:
 	var sky_mat := PanoramaSkyMaterial.new()
-	sky_mat.panorama = _generate_star_texture()
+	# Use the real Milky Way panorama when present; otherwise generate stars.
+	if ResourceLoader.exists(MILKY_WAY):
+		sky_mat.panorama = load(MILKY_WAY)
+	else:
+		sky_mat.panorama = _generate_star_texture()
 
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
