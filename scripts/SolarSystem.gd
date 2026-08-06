@@ -58,7 +58,7 @@ func _build_planets() -> void:
 		planet.name = data.name
 		planet.position = Vector3(data.distance, 0.0, 0.0)
 		planet.rotation.z = deg_to_rad(data.tilt)  # axial tilt
-		planet.set_meta("fact", data.fact)
+		planet.set_meta("data", data)
 		pivot.add_child(planet)
 
 		if data.name == "Saturn":

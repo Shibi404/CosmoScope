@@ -133,9 +133,10 @@ func _build_gaze_ui() -> void:
 	_info_label = Label3D.new()
 	_info_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_info_label.no_depth_test = true
-	_info_label.pixel_size = 0.005
-	_info_label.font_size = 64
-	_info_label.outline_size = 12
+	_info_label.pixel_size = 0.004
+	_info_label.font_size = 48
+	_info_label.outline_size = 10
+	_info_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_info_label.visible = false
 	_left_viewport.add_child(_info_label)
 
@@ -212,9 +213,32 @@ func _update_gaze(delta: float) -> void:
 			_show_info(best)
 
 func _show_info(planet: Node3D) -> void:
-	_info_label.text = "%s\n%s" % [planet.name, planet.get_meta("fact", "")]
+	_info_label.text = _panel_text(planet.get_meta("data", {}))
 	_info_label.global_position = planet.global_position + Vector3(0.0, 1.2, 0.0)
 	_info_label.visible = true
+
+func _panel_text(d: Dictionary) -> String:
+	if d.is_empty():
+		return ""
+	return "%s\nDiameter: %s km\nDistance: %sM km from Sun\nYear: %s   Day: %s\nMoons: %d   Gravity: %.2fx Earth\n\n%s" % [
+		d.name, _commas(d.diameter_km), _trim(d.sun_dist_mkm), d.year, d.day, d.moons, d.gravity_g, d.fact
+	]
+
+# Insert thousands separators (GDScript has no built-in for this).
+func _commas(n: int) -> String:
+	var s := str(n)
+	var out := ""
+	var count := 0
+	for i in range(s.length() - 1, -1, -1):
+		out = s[i] + out
+		count += 1
+		if count % 3 == 0 and i > 0:
+			out = "," + out
+	return out
+
+# Drop a trailing ".0" so whole numbers read cleanly.
+func _trim(v: float) -> String:
+	return "%.1f" % v if v != floor(v) else str(int(v))
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and (event.button_mask & MOUSE_BUTTON_MASK_LEFT):
