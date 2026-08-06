@@ -135,6 +135,10 @@ func _add_rings(planet: Node3D, planet_radius: float) -> void:
 
 	var mat := ShaderMaterial.new()
 	mat.shader = RING_SHADER
+	var ring_tex := "res://assets/textures/2k_saturn_ring_alpha.png"
+	if ResourceLoader.exists(ring_tex):
+		mat.set_shader_parameter("ring_texture", load(ring_tex))
+		mat.set_shader_parameter("use_texture", true)
 
 	var rings := MeshInstance3D.new()
 	rings.name = "Rings"
@@ -183,6 +187,10 @@ func _sun_material() -> ShaderMaterial:
 	var mat := ShaderMaterial.new()
 	mat.shader = SUN_SHADER
 	mat.set_shader_parameter("hot", SolarSystemData.SUN.color)
+	var tex_path: String = SolarSystemData.SUN.get("texture", "")
+	if not tex_path.is_empty() and ResourceLoader.exists(tex_path):
+		mat.set_shader_parameter("sun_texture", load(tex_path))
+		mat.set_shader_parameter("use_texture", true)
 	return mat
 
 func _make_sphere(radius: float, material: Material) -> MeshInstance3D:

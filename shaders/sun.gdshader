@@ -11,6 +11,10 @@ uniform float flow_speed = 0.06;
 uniform float noise_scale = 3.0;
 uniform float emission_strength = 2.2;
 
+// Optional photographic sun map, modulated by the animated shimmer.
+uniform sampler2D sun_texture : source_color, hint_default_white;
+uniform bool use_texture = false;
+
 varying vec3 v_local;
 
 void vertex() {
@@ -22,7 +26,14 @@ void fragment() {
 	float n1 = fbm(p + vec3(TIME * flow_speed));
 	float n2 = fbm(p * 2.0 - vec3(TIME * flow_speed * 0.5));
 	float m = clamp(n1 * 0.6 + n2 * 0.6, 0.0, 1.0);
-	vec3 col = mix(cool, hot, m);
+
+	vec3 col;
+	if (use_texture) {
+		// Keep the churn by brightening/darkening the real surface over time.
+		col = texture(sun_texture, UV).rgb * (0.75 + 0.5 * m);
+	} else {
+		col = mix(cool, hot, m);
+	}
 	ALBEDO = col;
 	EMISSION = col * emission_strength;
 }
