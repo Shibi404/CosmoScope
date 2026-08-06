@@ -22,6 +22,11 @@ const LENS_SHADER := preload("res://shaders/lens_distortion.gdshader")
 @export var gaze_angle_deg: float = 6.0
 @export var reticle_distance: float = 3.0
 
+# --- Focus / inspect mode ---
+@export var inspect_distance: float = 4.0
+@export var inspect_radius: float = 1.0
+@export var inspect_spin_speed: float = 20.0
+
 # --- Gyro mapping (tuned against real device readings) ---
 ## Which gyroscope component drives yaw / pitch (0=x, 1=y, 2=z).
 @export_range(0, 2) var gyro_yaw_axis: int = 1
@@ -48,6 +53,9 @@ var _pitch: float = 0.0
 var _gazed: Node3D = null
 var _dwell: float = 0.0
 var _debug_label: Label = null
+var _inspecting: bool = false
+var _inspect_mesh: MeshInstance3D = null
+var _inspect_light: OmniLight3D = null
 
 func _ready() -> void:
 	_build_eyes()
@@ -159,7 +167,10 @@ func _layout() -> void:
 func _process(delta: float) -> void:
 	_update_orientation(delta)
 	_update_cameras()
-	_update_gaze(delta)
+	if _inspecting:
+		_update_inspect(delta)
+	else:
+		_update_gaze(delta)
 	_update_debug()
 
 func _update_orientation(delta: float) -> void:
@@ -206,16 +217,65 @@ func _update_gaze(delta: float) -> void:
 	if best != _gazed:
 		_gazed = best
 		_dwell = 0.0
-		_info_label.visible = false
 	elif best != null:
 		_dwell += delta
-		if _dwell >= gaze_dwell_time and not _info_label.visible:
-			_show_info(best)
+		if _dwell >= gaze_dwell_time:
+			_enter_inspect(best)
 
-func _show_info(planet: Node3D) -> void:
+# --- Focus / inspect mode ---
+# Gaze-dwell brings the planet forward as an enlarged, rotating model with its
+# stats panel; a tap (Cardboard button / screen) returns to the system view.
+
+func _enter_inspect(planet: Node3D) -> void:
+	_inspecting = true
+	_reticle.visible = false
+
+	var forward := -_orientation.z
+	var anchor := head_position + forward * inspect_distance
+
+	var mi := MeshInstance3D.new()
+	var mesh := SphereMesh.new()
+	mesh.radius = inspect_radius
+	mesh.height = inspect_radius * 2.0
+	mesh.radial_segments = 48
+	mesh.rings = 24
+	mi.mesh = mesh
+	var src := planet as MeshInstance3D
+	if src != null:
+		mi.material_override = src.material_override  # reuse the planet's surface
+	mi.position = anchor
+	_left_viewport.add_child(mi)
+	_inspect_mesh = mi
+
+	# Fill light on the viewer's side, so the camera-facing surface is lit
+	# (the Sun alone would leave it backlit and dark).
+	var light := OmniLight3D.new()
+	light.position = head_position + forward * 0.5 + _orientation.y * 0.8
+	light.omni_range = inspect_distance + inspect_radius + 3.0
+	light.light_energy = 2.5
+	_left_viewport.add_child(light)
+	_inspect_light = light
+
 	_info_label.text = _panel_text(planet.get_meta("data", {}))
-	_info_label.global_position = planet.global_position + Vector3(0.0, 1.2, 0.0)
+	_info_label.global_position = anchor + Vector3(0.0, -(inspect_radius + 0.8), 0.0)
 	_info_label.visible = true
+
+func _update_inspect(delta: float) -> void:
+	if is_instance_valid(_inspect_mesh):
+		_inspect_mesh.rotate_y(deg_to_rad(inspect_spin_speed) * delta)
+
+func _exit_inspect() -> void:
+	_inspecting = false
+	if is_instance_valid(_inspect_mesh):
+		_inspect_mesh.queue_free()
+	_inspect_mesh = null
+	if is_instance_valid(_inspect_light):
+		_inspect_light.queue_free()
+	_inspect_light = null
+	_info_label.visible = false
+	_reticle.visible = true
+	_gazed = null
+	_dwell = 0.0
 
 func _panel_text(d: Dictionary) -> String:
 	if d.is_empty():
@@ -244,3 +304,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and (event.button_mask & MOUSE_BUTTON_MASK_LEFT):
 		_yaw -= event.relative.x * 0.005
 		_pitch = clampf(_pitch - event.relative.y * 0.005, -1.4, 1.4)
+	elif event is InputEventScreenTouch and not event.pressed:
+		_on_tap()
+	elif event is InputEventKey and event.pressed and event.keycode == KEY_SPACE:
+		_on_tap()  # desktop equivalent of the Cardboard button
+
+func _on_tap() -> void:
+	if _inspecting:
+		_exit_inspect()
