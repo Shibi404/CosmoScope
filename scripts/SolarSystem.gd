@@ -171,6 +171,12 @@ func _planet_material(data: Dictionary) -> ShaderMaterial:
 	mat.set_shader_parameter("atmosphere_strength", data.atmo)
 	mat.set_shader_parameter("has_spot", data.get("spot", false))
 	mat.set_shader_parameter("water", data.get("ocean", false))
+
+	# Use a photographic map when one is provided; otherwise stay procedural.
+	var tex_path: String = data.get("texture", "")
+	if not tex_path.is_empty() and ResourceLoader.exists(tex_path):
+		mat.set_shader_parameter("albedo_texture", load(tex_path))
+		mat.set_shader_parameter("use_texture", true)
 	return mat
 
 func _sun_material() -> ShaderMaterial:
