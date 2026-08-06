@@ -22,10 +22,11 @@ const LENS_SHADER := preload("res://shaders/lens_distortion.gdshader")
 @export var gaze_angle_deg: float = 6.0
 @export var reticle_distance: float = 3.0
 
-# --- Focus / inspect mode ---
-@export var inspect_distance: float = 4.0
-@export var inspect_radius: float = 1.0
-@export var inspect_spin_speed: float = 20.0
+# --- Focus mode (camera flies to the selected planet) ---
+## Seconds for the fly-in / fly-out camera animation.
+@export var focus_fly_time: float = 1.4
+## Stand-off from the planet surface, as a multiple of its radius.
+@export var focus_standoff: float = 3.0
 
 # --- Gyro mapping (tuned against real device readings) ---
 ## Which gyroscope component drives yaw / pitch (0=x, 1=y, 2=z).
@@ -50,16 +51,30 @@ var _hint_label: Label3D
 var _planets: Array[Node3D] = []
 
 var _orientation: Basis = Basis.IDENTITY
+var _view_origin: Vector3 = Vector3.ZERO  # current camera position (animated on focus)
 var _yaw: float = 0.0
 var _pitch: float = 0.0
 var _gazed: Node3D = null
 var _dwell: float = 0.0
 var _debug_label: Label = null
-var _inspecting: bool = false
-var _inspect_mesh: MeshInstance3D = null
-var _inspect_light: OmniLight3D = null
+
+# Focus flight state machine.
+enum { FOCUS_NONE, FOCUS_FLY_IN, FOCUS_HELD, FOCUS_FLY_OUT }
+var _focus_state: int = FOCUS_NONE
+var _focus_planet: Node3D = null
+var _fly_t: float = 0.0
+var _fly_from_origin: Vector3 = Vector3.ZERO
+var _fly_to_origin: Vector3 = Vector3.ZERO
+var _fly_from_yaw: float = 0.0
+var _fly_to_yaw: float = 0.0
+var _fly_from_pitch: float = 0.0
+var _fly_to_pitch: float = 0.0
+# Where to fly back to (the pre-focus position + look).
+var _return_yaw: float = 0.0
+var _return_pitch: float = 0.0
 
 func _ready() -> void:
+	_view_origin = head_position
 	_build_eyes()
 	_build_world()
 	_build_gaze_ui()
@@ -143,7 +158,7 @@ func _build_gaze_ui() -> void:
 	_info_label = Label3D.new()
 	_info_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_info_label.no_depth_test = true
-	_info_label.pixel_size = 0.004
+	_info_label.pixel_size = 0.0032
 	_info_label.font_size = 48
 	_info_label.outline_size = 10
 	_info_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -177,11 +192,13 @@ func _layout() -> void:
 	_right_rect.size = Vector2(full_w - half, full_h)
 
 func _process(delta: float) -> void:
-	_update_orientation(delta)
-	_update_cameras()
-	if _inspecting:
-		_update_inspect(delta)
+	if _focus_state == FOCUS_FLY_IN or _focus_state == FOCUS_FLY_OUT:
+		_update_fly(delta)          # scripted camera: sets _view_origin, _yaw, _pitch
 	else:
+		_update_orientation(delta)  # free head-look via gyro / mouse
+	_orientation = Basis(Vector3.UP, _yaw) * Basis(Vector3.RIGHT, _pitch)
+	_update_cameras()
+	if _focus_state == FOCUS_NONE:
 		_update_gaze(delta)
 	_update_hint()
 	_update_debug()
@@ -189,12 +206,12 @@ func _process(delta: float) -> void:
 func _update_hint() -> void:
 	if _hint_label == null:
 		return
-	if _inspecting:
+	if _focus_state != FOCUS_NONE:
 		_hint_label.visible = false
 		return
 	_hint_label.visible = true
 	var forward := -_orientation.z
-	_hint_label.global_position = head_position + forward * reticle_distance - _orientation.y * 0.5
+	_hint_label.global_position = _view_origin + forward * reticle_distance - _orientation.y * 0.5
 	var to_true: bool = _solar == null or not _solar.is_true_scale()
 	_hint_label.text = "Tap: %s sizes" % ("true" if to_true else "enhanced")
 
@@ -207,7 +224,6 @@ func _update_orientation(delta: float) -> void:
 		_yaw += g[gyro_yaw_axis] * gyro_yaw_sign * delta
 		_pitch += g[gyro_pitch_axis] * gyro_pitch_sign * delta
 	_pitch = clampf(_pitch, -1.5, 1.5)
-	_orientation = Basis(Vector3.UP, _yaw) * Basis(Vector3.RIGHT, _pitch)
 
 func _update_debug() -> void:
 	if _debug_label == null:
@@ -220,20 +236,20 @@ func _update_debug() -> void:
 
 func _update_cameras() -> void:
 	var right := _orientation.x
-	var left_pos := head_position - right * (ipd * 0.5)
-	var right_pos := head_position + right * (ipd * 0.5)
+	var left_pos := _view_origin - right * (ipd * 0.5)
+	var right_pos := _view_origin + right * (ipd * 0.5)
 	_left_cam.global_transform = Transform3D(_orientation, left_pos)
 	_right_cam.global_transform = Transform3D(_orientation, right_pos)
 
 func _update_gaze(delta: float) -> void:
 	var forward := -_orientation.z
-	_reticle.global_position = head_position + forward * reticle_distance
+	_reticle.global_position = _view_origin + forward * reticle_distance
 
 	# Pick the planet closest to the gaze direction, within the gaze cone.
 	var best: Node3D = null
 	var best_dot := cos(deg_to_rad(gaze_angle_deg))
 	for p in _planets:
-		var dir := (p.global_position - head_position).normalized()
+		var dir := (p.global_position - _view_origin).normalized()
 		var d := forward.dot(dir)
 		if d > best_dot:
 			best_dot = d
@@ -245,62 +261,89 @@ func _update_gaze(delta: float) -> void:
 	elif best != null:
 		_dwell += delta
 		if _dwell >= gaze_dwell_time:
-			_enter_inspect(best)
+			_begin_focus(best)
 
-# --- Focus / inspect mode ---
-# Gaze-dwell brings the planet forward as an enlarged, rotating model with its
-# stats panel; a tap (Cardboard button / screen) returns to the system view.
+# --- Focus mode ---
+# Gaze-dwell flies the camera in toward the real planet (freezing its orbit so
+# it holds still) and shows its stats there; a tap flies the camera back out.
 
-func _enter_inspect(planet: Node3D) -> void:
-	_inspecting = true
+func _begin_focus(planet: Node3D) -> void:
+	_focus_state = FOCUS_FLY_IN
+	_focus_planet = planet
 	_reticle.visible = false
+	_info_label.visible = false
+	if _solar != null:
+		_solar.orbit_enabled = false  # freeze so the target holds still
 
-	var forward := -_orientation.z
-	var anchor := head_position + forward * inspect_distance
+	var planet_pos := planet.global_position
+	var radius := _planet_radius(planet)
+	var dir := _view_origin - planet_pos
+	dir = dir.normalized() if dir.length() > 0.001 else Vector3.BACK
 
-	var mi := MeshInstance3D.new()
-	var mesh := SphereMesh.new()
-	mesh.radius = inspect_radius
-	mesh.height = inspect_radius * 2.0
-	mesh.radial_segments = 48
-	mesh.rings = 24
-	mi.mesh = mesh
-	var src := planet as MeshInstance3D
-	if src != null:
-		mi.material_override = src.material_override  # reuse the planet's surface
-	mi.position = anchor
-	_left_viewport.add_child(mi)
-	_inspect_mesh = mi
+	# Remember where to return to (current position + look).
+	_return_yaw = _yaw
+	_return_pitch = _pitch
 
-	# Fill light on the viewer's side, so the camera-facing surface is lit
-	# (the Sun alone would leave it backlit and dark).
-	var light := OmniLight3D.new()
-	light.position = head_position + forward * 0.5 + _orientation.y * 0.8
-	light.omni_range = inspect_distance + inspect_radius + 3.0
-	light.light_energy = 2.5
-	_left_viewport.add_child(light)
-	_inspect_light = light
+	_fly_from_origin = _view_origin
+	_fly_to_origin = planet_pos + dir * (radius * focus_standoff + 0.6)
+	_set_fly_targets_from(_view_origin, planet_pos, _fly_to_origin)
+	_fly_t = 0.0
 
+func _begin_return() -> void:
+	_focus_state = FOCUS_FLY_OUT
+	_info_label.visible = false
+	_fly_from_origin = _view_origin
+	_fly_to_origin = head_position
+	_fly_from_yaw = _yaw
+	_fly_to_yaw = _return_yaw
+	_fly_from_pitch = _pitch
+	_fly_to_pitch = _return_pitch
+	_fly_t = 0.0
+
+# Set the fly-in yaw/pitch endpoints so the camera ends looking at the planet.
+func _set_fly_targets_from(_from_origin: Vector3, target_pos: Vector3, to_origin: Vector3) -> void:
+	_fly_from_yaw = _yaw
+	_fly_from_pitch = _pitch
+	var f := (target_pos - to_origin).normalized()
+	_fly_to_yaw = atan2(-f.x, -f.z)
+	_fly_to_pitch = asin(clampf(f.y, -1.0, 1.0))
+
+func _update_fly(delta: float) -> void:
+	_fly_t = minf(1.0, _fly_t + delta / max(focus_fly_time, 0.01))
+	var e := _fly_t * _fly_t * (3.0 - 2.0 * _fly_t)  # smoothstep ease
+	_view_origin = _fly_from_origin.lerp(_fly_to_origin, e)
+	_yaw = lerp_angle(_fly_from_yaw, _fly_to_yaw, e)
+	_pitch = lerpf(_fly_from_pitch, _fly_to_pitch, e)
+	if _fly_t < 1.0:
+		return
+	if _focus_state == FOCUS_FLY_IN:
+		_focus_state = FOCUS_HELD
+		_show_planet_info(_focus_planet)
+	else:
+		_end_focus()
+
+func _show_planet_info(planet: Node3D) -> void:
+	# Pin the panel a fixed distance in front of the camera (lower third) so it
+	# reads at a consistent size and always fits, regardless of planet size.
 	_info_label.text = _panel_text(planet.get_meta("data", {}))
-	_info_label.global_position = anchor + Vector3(0.0, -(inspect_radius + 0.8), 0.0)
+	var forward := -_orientation.z
+	var down := -_orientation.y
+	_info_label.global_position = _view_origin + forward * 2.4 + down * 0.95
 	_info_label.visible = true
 
-func _update_inspect(delta: float) -> void:
-	if is_instance_valid(_inspect_mesh):
-		_inspect_mesh.rotate_y(deg_to_rad(inspect_spin_speed) * delta)
-
-func _exit_inspect() -> void:
-	_inspecting = false
-	if is_instance_valid(_inspect_mesh):
-		_inspect_mesh.queue_free()
-	_inspect_mesh = null
-	if is_instance_valid(_inspect_light):
-		_inspect_light.queue_free()
-	_inspect_light = null
-	_info_label.visible = false
+func _end_focus() -> void:
+	_focus_state = FOCUS_NONE
+	_focus_planet = null
+	if _solar != null:
+		_solar.orbit_enabled = true
 	_reticle.visible = true
 	_gazed = null
 	_dwell = 0.0
+
+func _planet_radius(planet: Node3D) -> float:
+	var data: Dictionary = planet.get_meta("data", {})
+	var base: float = data.get("radius", 0.3) if not data.is_empty() else 0.3
+	return base * planet.scale.x
 
 func _panel_text(d: Dictionary) -> String:
 	if d.is_empty():
@@ -335,7 +378,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_on_tap()  # desktop equivalent of the Cardboard button
 
 func _on_tap() -> void:
-	if _inspecting:
-		_exit_inspect()
-	elif _solar != null:
+	# Taps during the fly animation are ignored.
+	if _focus_state == FOCUS_HELD:
+		_begin_return()
+	elif _focus_state == FOCUS_NONE and _solar != null:
 		_solar.set_true_scale(not _solar.is_true_scale())
