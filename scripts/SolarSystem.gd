@@ -155,6 +155,8 @@ func _planet_material(data: Dictionary) -> ShaderMaterial:
 	mat.set_shader_parameter("color_a", data.color)
 	mat.set_shader_parameter("color_b", data.color2)
 	mat.set_shader_parameter("banded", data.banded)
+	mat.set_shader_parameter("atmosphere_color", data.atmosphere)
+	mat.set_shader_parameter("atmosphere_strength", data.atmo)
 	return mat
 
 func _sun_material() -> ShaderMaterial:

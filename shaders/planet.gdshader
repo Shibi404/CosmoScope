@@ -11,6 +11,11 @@ uniform bool banded = false;
 uniform float band_frequency = 12.0;
 uniform float surface_roughness = 0.9;
 
+// Atmospheric rim glow (Fresnel halo at the planet's edge).
+uniform vec3 atmosphere_color : source_color = vec3(0.4, 0.6, 1.0);
+uniform float atmosphere_strength = 0.0;
+uniform float atmosphere_power = 3.0;
+
 varying vec3 v_local;
 
 void vertex() {
@@ -30,4 +35,8 @@ void fragment() {
 	ALBEDO = mix(color_a, color_b, n);
 	ROUGHNESS = surface_roughness;
 	METALLIC = 0.0;
+
+	// Fresnel: ~0 facing the camera, ~1 at the silhouette -> a soft atmosphere halo.
+	float fres = pow(clamp(1.0 - dot(normalize(NORMAL), normalize(VIEW)), 0.0, 1.0), atmosphere_power);
+	EMISSION = atmosphere_color * fres * atmosphere_strength;
 }
