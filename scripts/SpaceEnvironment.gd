@@ -22,10 +22,25 @@ func _ready() -> void:
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_energy = 0.25
 
-	# Bloom so the Sun and emissive surfaces glow like real light sources.
+	# ACES tonemapping for filmic highlight roll-off (the Sun / rim glow no
+	# longer clip to flat white), with exposure lifted to keep midtones bright.
+	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	env.tonemap_exposure = 1.3
+	env.tonemap_white = 1.0
+
+	# Bloom so the Sun and emissive surfaces glow like real light sources;
+	# the HDR threshold keeps only genuinely bright pixels blooming.
 	env.glow_enabled = true
-	env.glow_intensity = 0.8
+	env.glow_intensity = 0.9
+	env.glow_strength = 1.0
 	env.glow_bloom = 0.15
+	env.glow_hdr_threshold = 0.9
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
+
+	# A touch more contrast and colour for a richer, less washed-out look.
+	env.adjustment_enabled = true
+	env.adjustment_contrast = 1.05
+	env.adjustment_saturation = 1.15
 
 	environment = env
 
