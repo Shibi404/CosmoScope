@@ -9,6 +9,7 @@ const SolarSystemData := preload("res://data/planets.gd")
 const PLANET_SHADER := preload("res://shaders/planet.gdshader")
 const SUN_SHADER := preload("res://shaders/sun.gdshader")
 const RING_SHADER := preload("res://shaders/ring.gdshader")
+const CORONA_SHADER := preload("res://shaders/corona.gdshader")
 
 ## Toggle orbital motion (e.g. pause for inspection).
 @export var orbit_enabled: bool = true
@@ -65,6 +66,17 @@ func _build_sun() -> void:
 	light.omni_range = 200.0
 	light.light_energy = 2.0
 	sun.add_child(light)
+
+	# Additive, camera-facing corona so the Sun glows as a radiant star.
+	var corona := MeshInstance3D.new()
+	corona.name = "Corona"
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE * SolarSystemData.SUN.radius * 5.0
+	corona.mesh = quad
+	var cmat := ShaderMaterial.new()
+	cmat.shader = CORONA_SHADER
+	corona.material_override = cmat
+	sun.add_child(corona)
 
 func _build_planets() -> void:
 	# Anchor true scale on the largest planet so it keeps its size and the
