@@ -72,6 +72,10 @@ var _fly_to_pitch: float = 0.0
 # Where to fly back to (the pre-focus position + look).
 var _return_yaw: float = 0.0
 var _return_pitch: float = 0.0
+# Camera offset from the focused planet, kept fixed so the camera follows it.
+var _focus_offset: Vector3 = Vector3.ZERO
+# Viewer-side fill light so the planet's near face stays lit as it revolves.
+var _focus_light: OmniLight3D = null
 
 func _ready() -> void:
 	_view_origin = head_position
@@ -192,14 +196,24 @@ func _layout() -> void:
 	_right_rect.size = Vector2(full_w - half, full_h)
 
 func _process(delta: float) -> void:
-	if _focus_state == FOCUS_FLY_IN or _focus_state == FOCUS_FLY_OUT:
-		_update_fly(delta)          # scripted camera: sets _view_origin, _yaw, _pitch
-	else:
-		_update_orientation(delta)  # free head-look via gyro / mouse
+	match _focus_state:
+		FOCUS_FLY_IN, FOCUS_FLY_OUT:
+			_update_fly(delta)          # scripted camera: sets _view_origin, _yaw, _pitch
+		FOCUS_HELD:
+			_update_orientation(delta)  # free head-look while the planet keeps moving
+			# Follow the still-orbiting planet, keeping the same relative offset
+			# so it stays framed while the Sun and stars sweep past.
+			_view_origin = _focus_planet.global_position + _focus_offset
+		_:
+			_update_orientation(delta)  # free head-look via gyro / mouse
 	_orientation = Basis(Vector3.UP, _yaw) * Basis(Vector3.RIGHT, _pitch)
 	_update_cameras()
 	if _focus_state == FOCUS_NONE:
 		_update_gaze(delta)
+	else:
+		_place_focus_light()
+		if _focus_state == FOCUS_HELD:
+			_pin_info_panel()
 	_update_hint()
 	_update_debug()
 
@@ -264,30 +278,35 @@ func _update_gaze(delta: float) -> void:
 			_begin_focus(best)
 
 # --- Focus mode ---
-# Gaze-dwell flies the camera in toward the real planet (freezing its orbit so
-# it holds still) and shows its stats there; a tap flies the camera back out.
+# Gaze-dwell flies the camera in toward the real planet and shows its stats.
+# The orbit keeps running: the camera holds a fixed offset and follows the
+# planet, so it stays framed while everything sweeps past. A tap flies back out.
 
 func _begin_focus(planet: Node3D) -> void:
 	_focus_state = FOCUS_FLY_IN
 	_focus_planet = planet
 	_reticle.visible = false
 	_info_label.visible = false
-	if _solar != null:
-		_solar.orbit_enabled = false  # freeze so the target holds still
 
 	var planet_pos := planet.global_position
 	var radius := _planet_radius(planet)
 	var dir := _view_origin - planet_pos
 	dir = dir.normalized() if dir.length() > 0.001 else Vector3.BACK
+	_focus_offset = dir * (radius * focus_standoff + 0.6)
 
-	# Remember where to return to (current position + look).
+	# Remember where to return to (pre-focus position + look).
 	_return_yaw = _yaw
 	_return_pitch = _pitch
-
 	_fly_from_origin = _view_origin
-	_fly_to_origin = planet_pos + dir * (radius * focus_standoff + 0.6)
-	_set_fly_targets_from(_view_origin, planet_pos, _fly_to_origin)
+	_fly_from_yaw = _yaw
+	_fly_from_pitch = _pitch
 	_fly_t = 0.0
+
+	if _focus_light == null:
+		_focus_light = OmniLight3D.new()
+		_focus_light.omni_range = 40.0
+		_focus_light.light_energy = 1.4
+		_left_viewport.add_child(_focus_light)
 
 func _begin_return() -> void:
 	_focus_state = FOCUS_FLY_OUT
@@ -300,20 +319,20 @@ func _begin_return() -> void:
 	_fly_to_pitch = _return_pitch
 	_fly_t = 0.0
 
-# Set the fly-in yaw/pitch endpoints so the camera ends looking at the planet.
-func _set_fly_targets_from(_from_origin: Vector3, target_pos: Vector3, to_origin: Vector3) -> void:
-	_fly_from_yaw = _yaw
-	_fly_from_pitch = _pitch
-	var f := (target_pos - to_origin).normalized()
-	_fly_to_yaw = atan2(-f.x, -f.z)
-	_fly_to_pitch = asin(clampf(f.y, -1.0, 1.0))
-
 func _update_fly(delta: float) -> void:
 	_fly_t = minf(1.0, _fly_t + delta / max(focus_fly_time, 0.01))
 	var e := _fly_t * _fly_t * (3.0 - 2.0 * _fly_t)  # smoothstep ease
-	_view_origin = _fly_from_origin.lerp(_fly_to_origin, e)
-	_yaw = lerp_angle(_fly_from_yaw, _fly_to_yaw, e)
-	_pitch = lerpf(_fly_from_pitch, _fly_to_pitch, e)
+	if _focus_state == FOCUS_FLY_IN:
+		# The target tracks the moving planet, and the look eases onto it.
+		var target := _focus_planet.global_position + _focus_offset
+		_view_origin = _fly_from_origin.lerp(target, e)
+		var f := (_focus_planet.global_position - _view_origin).normalized()
+		_yaw = lerp_angle(_fly_from_yaw, atan2(-f.x, -f.z), e)
+		_pitch = lerpf(_fly_from_pitch, asin(clampf(f.y, -1.0, 1.0)), e)
+	else:  # FLY_OUT: fixed home target
+		_view_origin = _fly_from_origin.lerp(_fly_to_origin, e)
+		_yaw = lerp_angle(_fly_from_yaw, _fly_to_yaw, e)
+		_pitch = lerpf(_fly_from_pitch, _fly_to_pitch, e)
 	if _fly_t < 1.0:
 		return
 	if _focus_state == FOCUS_FLY_IN:
@@ -323,19 +342,30 @@ func _update_fly(delta: float) -> void:
 		_end_focus()
 
 func _show_planet_info(planet: Node3D) -> void:
-	# Pin the panel a fixed distance in front of the camera (lower third) so it
-	# reads at a consistent size and always fits, regardless of planet size.
 	_info_label.text = _panel_text(planet.get_meta("data", {}))
+	_info_label.visible = true
+	_pin_info_panel()
+
+# Pin the panel a fixed distance in front of the camera (lower third) so it
+# reads at a consistent size, always fits, and tracks head-look during focus.
+func _pin_info_panel() -> void:
 	var forward := -_orientation.z
 	var down := -_orientation.y
 	_info_label.global_position = _view_origin + forward * 2.4 + down * 0.95
-	_info_label.visible = true
+
+# Keep the fill light beside/above the camera so the planet's near face stays
+# lit as it revolves in and out of the Sun's direct light.
+func _place_focus_light() -> void:
+	if not is_instance_valid(_focus_light):
+		return
+	_focus_light.global_position = _view_origin + (-_orientation.z) * 0.5 + _orientation.y * 0.8
 
 func _end_focus() -> void:
 	_focus_state = FOCUS_NONE
 	_focus_planet = null
-	if _solar != null:
-		_solar.orbit_enabled = true
+	if is_instance_valid(_focus_light):
+		_focus_light.queue_free()
+	_focus_light = null
 	_reticle.visible = true
 	_gazed = null
 	_dwell = 0.0
