@@ -43,8 +43,10 @@ var _right_cam: Camera3D
 var _left_rect: TextureRect
 var _right_rect: TextureRect
 
+var _solar: Node3D = null
 var _reticle: MeshInstance3D
 var _info_label: Label3D
+var _hint_label: Label3D
 var _planets: Array[Node3D] = []
 
 var _orientation: Basis = Basis.IDENTITY
@@ -119,10 +121,10 @@ func _build_world() -> void:
 	env.set_script(SpaceEnvScript)
 	_left_viewport.add_child(env)
 
-	var solar := Node3D.new()
-	solar.set_script(SolarSystemScript)
-	_left_viewport.add_child(solar)
-	_planets = solar.get_planet_bodies()
+	_solar = Node3D.new()
+	_solar.set_script(SolarSystemScript)
+	_left_viewport.add_child(_solar)
+	_planets = _solar.get_planet_bodies()
 
 func _build_gaze_ui() -> void:
 	_reticle = MeshInstance3D.new()
@@ -148,6 +150,16 @@ func _build_gaze_ui() -> void:
 	_info_label.visible = false
 	_left_viewport.add_child(_info_label)
 
+	# Small hint anchored below the reticle, explaining what a tap does.
+	_hint_label = Label3D.new()
+	_hint_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_hint_label.no_depth_test = true
+	_hint_label.pixel_size = 0.003
+	_hint_label.font_size = 40
+	_hint_label.outline_size = 8
+	_hint_label.modulate = Color(1.0, 1.0, 1.0, 0.7)
+	_left_viewport.add_child(_hint_label)
+
 func _layout() -> void:
 	# Use the visible rect (2D canvas space) rather than OS window pixels, so it
 	# stays correct under the project's canvas_items stretch mode.
@@ -171,7 +183,20 @@ func _process(delta: float) -> void:
 		_update_inspect(delta)
 	else:
 		_update_gaze(delta)
+	_update_hint()
 	_update_debug()
+
+func _update_hint() -> void:
+	if _hint_label == null:
+		return
+	if _inspecting:
+		_hint_label.visible = false
+		return
+	_hint_label.visible = true
+	var forward := -_orientation.z
+	_hint_label.global_position = head_position + forward * reticle_distance - _orientation.y * 0.5
+	var to_true: bool = _solar == null or not _solar.is_true_scale()
+	_hint_label.text = "Tap: %s sizes" % ("true" if to_true else "enhanced")
 
 func _update_orientation(delta: float) -> void:
 	# Unified yaw/pitch model: the gyroscope integrates into the same _yaw and
@@ -312,3 +337,5 @@ func _unhandled_input(event: InputEvent) -> void:
 func _on_tap() -> void:
 	if _inspecting:
 		_exit_inspect()
+	elif _solar != null:
+		_solar.set_true_scale(not _solar.is_true_scale())

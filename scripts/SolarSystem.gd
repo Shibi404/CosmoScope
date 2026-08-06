@@ -16,15 +16,22 @@ const RING_SHADER := preload("res://shaders/ring.gdshader")
 @export var time_scale: float = 1.0
 ## Draw faint circular orbit paths in the ecliptic plane.
 @export var show_orbits: bool = true
+## Animation speed for the enhanced<->true relative-size morph.
+@export var scale_morph_speed: float = 2.0
 
-# One entry per planet: { pivot, planet, orbit_speed, spin_speed }.
+# One entry per planet: { pivot, planet, orbit_speed, spin_speed, true_scale }.
 var _orbits: Array[Dictionary] = []
+
+# 0 = enhanced (readable) sizes, 1 = true relative sizes.
+var _scale_target: float = 0.0
+var _scale_t: float = 0.0
 
 func _ready() -> void:
 	_build_sun()
 	_build_planets()
 
 func _process(delta: float) -> void:
+	_animate_scale(delta)
 	if not orbit_enabled:
 		return
 	var step := delta * time_scale
@@ -32,6 +39,21 @@ func _process(delta: float) -> void:
 		o.pivot.rotate_y(deg_to_rad(o.orbit_speed) * step)
 		# Spin about the planet's own (tilted) axis.
 		o.planet.rotate_object_local(Vector3.UP, deg_to_rad(o.spin_speed) * step)
+
+## Switch planet sizes between enhanced (readable) and true relative scale.
+func set_true_scale(enabled: bool) -> void:
+	_scale_target = 1.0 if enabled else 0.0
+
+func is_true_scale() -> bool:
+	return _scale_target > 0.5
+
+func _animate_scale(delta: float) -> void:
+	if is_equal_approx(_scale_t, _scale_target):
+		return
+	_scale_t = move_toward(_scale_t, _scale_target, scale_morph_speed * delta)
+	for o in _orbits:
+		var s := lerpf(1.0, o.true_scale, _scale_t)
+		o.planet.scale = Vector3.ONE * s
 
 func _build_sun() -> void:
 	var sun := _make_sphere(SolarSystemData.SUN.radius, _sun_material())
@@ -45,6 +67,15 @@ func _build_sun() -> void:
 	sun.add_child(light)
 
 func _build_planets() -> void:
+	# Anchor true scale on the largest planet so it keeps its size and the
+	# others shrink to their real proportions relative to it.
+	var ref_diam := 0.0
+	var ref_radius := 1.0
+	for d in SolarSystemData.PLANETS:
+		if float(d.diameter_km) > ref_diam:
+			ref_diam = float(d.diameter_km)
+			ref_radius = d.radius
+
 	for data in SolarSystemData.PLANETS:
 		if show_orbits:
 			_build_orbit_line(data.distance)
@@ -67,11 +98,13 @@ func _build_planets() -> void:
 		# Randomise start angle so the planets aren't lined up.
 		pivot.rotate_y(randf() * TAU)
 
+		var true_radius := ref_radius * (float(data.diameter_km) / ref_diam)
 		_orbits.append({
 			"pivot": pivot,
 			"planet": planet,
 			"orbit_speed": data.orbit_speed,
 			"spin_speed": data.spin_speed,
+			"true_scale": true_radius / data.radius,
 		})
 
 ## Planet body nodes, for gaze/selection by the VR and AR modes.
