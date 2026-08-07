@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://tourscene001"]
+
+[ext_resource type="Script" path="res://scripts/TourController.gd" id="1_tour"]
+
+[node name="TourScene" type="Node3D"]
+script = ExtResource("1_tour")

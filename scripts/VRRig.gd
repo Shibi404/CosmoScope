@@ -83,8 +83,33 @@ func _ready() -> void:
 	_build_world()
 	_build_gaze_ui()
 	_build_debug()
+	_build_menu_overlay()
 	_layout()
 	get_viewport().size_changed.connect(_layout)
+
+func _build_menu_overlay() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 20
+	add_child(layer)
+
+	var back_btn := Button.new()
+	back_btn.text = "← Menu"
+	back_btn.position = Vector2(12, 12)
+	back_btn.size = Vector2(90, 36)
+	back_btn.add_theme_font_size_override("font_size", 16)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.15, 0.15, 0.2, 0.7)
+	style.corner_radius_top_left = 8
+	style.corner_radius_top_right = 8
+	style.corner_radius_bottom_left = 8
+	style.corner_radius_bottom_right = 8
+	back_btn.add_theme_stylebox_override("normal", style)
+	back_btn.pressed.connect(func():
+		Input.action_press("ui_cancel")
+		await get_tree().process_frame
+		Input.action_release("ui_cancel")
+	)
+	layer.add_child(back_btn)
 
 func _build_debug() -> void:
 	if not debug_sensors:
