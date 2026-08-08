@@ -11,6 +11,9 @@ const PLANET_SHADER := preload("res://shaders/planet.gdshader")
 const SUN_SHADER := preload("res://shaders/sun.gdshader")
 const RING_SHADER := preload("res://shaders/ring.gdshader")
 const CORONA_SHADER := preload("res://shaders/corona.gdshader")
+const CUTAWAY_SHADER := preload("res://shaders/cutaway.gdshader")
+
+var _cutaway_enabled: bool = false
 
 ## Toggle orbital motion (e.g. pause for inspection).
 @export var orbit_enabled: bool = true
@@ -219,6 +222,9 @@ func _build_planets() -> void:
 		# Earth cloud layer — a second transparent sphere.
 		if data.get("has_clouds", false):
 			_add_cloud_layer(planet, data.radius)
+
+		# 3D Cutaway structure for internal planetary layers.
+		_add_cutaway_structure(planet, data)
 
 		# Build moons for this planet.
 		if data.has("moon_data"):
@@ -751,3 +757,41 @@ func _make_sphere(radius: float, material: Material) -> MeshInstance3D:
 	mi.mesh = mesh
 	mi.material_override = material
 	return mi
+
+## Toggle 3D internal structure cutaway view across all planets.
+func toggle_cutaway_view(enabled: bool) -> void:
+	_cutaway_enabled = enabled
+	for o in _orbits:
+		var planet: Node3D = o.planet
+		var cutaway: Node3D = planet.get_node_or_null("CutawayStructure")
+		if cutaway != null:
+			cutaway.visible = enabled
+
+func is_cutaway_enabled() -> bool:
+	return _cutaway_enabled
+
+func _add_cutaway_structure(planet: Node3D, data: Dictionary) -> void:
+	var cutaway := Node3D.new()
+	cutaway.name = "CutawayStructure"
+	cutaway.visible = false
+
+	var r: float = data.radius * 0.98
+
+	# Internal Core Mesh (Inner sphere)
+	var core_mesh := SphereMesh.new()
+	core_mesh.radius = r * 0.35
+	core_mesh.height = r * 0.70
+	var core_mat := ShaderMaterial.new()
+	core_mat.shader = CUTAWAY_SHADER
+	core_mat.set_shader_parameter("core_color", Color(1.0, 0.9, 0.2))
+	core_mat.set_shader_parameter("mantle_color", Color(0.85, 0.35, 0.1))
+	core_mat.set_shader_parameter("crust_color", data.get("color", Color(0.4, 0.3, 0.25)))
+	core_mat.set_shader_parameter("core_radius", 0.35)
+	core_mat.set_shader_parameter("mantle_radius", 0.85)
+
+	var core_inst := MeshInstance3D.new()
+	core_inst.mesh = core_mesh
+	core_inst.material_override = core_mat
+	cutaway.add_child(core_inst)
+
+	planet.add_child(cutaway)

@@ -212,22 +212,31 @@ func _build_ui() -> void:
 
 	var top_hbox := HBoxContainer.new()
 	top_hbox.alignment = BoxContainer.ALIGNMENT_BEGIN
+	top_hbox.add_theme_constant_override("separation", 10)
 	top_bar.add_child(top_hbox)
 
-	var back_btn := Button.new()
-	back_btn.text = "← Exit Tour"
-	back_btn.add_theme_font_size_override("font_size", 15)
 	var btn_style := StyleBoxFlat.new()
-	btn_style.bg_color = Color(0.18, 0.18, 0.28, 0.8)
+	btn_style.bg_color = Color(0.18, 0.22, 0.35, 0.9)
 	btn_style.corner_radius_top_left = 6
 	btn_style.corner_radius_top_right = 6
 	btn_style.corner_radius_bottom_left = 6
 	btn_style.corner_radius_bottom_right = 6
+	btn_style.content_margin_left = 12
+	btn_style.content_margin_right = 12
+	btn_style.content_margin_top = 6
+	btn_style.content_margin_bottom = 6
+
+	var back_btn := Button.new()
+	back_btn.text = "← Exit Tour"
+	back_btn.custom_minimum_size = Vector2(105, 34)
+	back_btn.add_theme_font_size_override("font_size", 14)
 	back_btn.add_theme_stylebox_override("normal", btn_style)
 	back_btn.pressed.connect(func():
-		Input.action_press("ui_cancel")
-		await get_tree().process_frame
-		Input.action_release("ui_cancel")
+		var main := get_node_or_null("/root/Main")
+		if main != null and main.has_method("_load_scene"):
+			main._load_scene("res://scenes/Menu.tscn")
+		else:
+			get_tree().change_scene_to_file("res://scenes/Menu.tscn")
 	)
 	top_hbox.add_child(back_btn)
 
@@ -243,21 +252,24 @@ func _build_ui() -> void:
 	# Playback controls (Prev, Pause/Play, Next).
 	var prev_btn := Button.new()
 	prev_btn.text = "⏮ Prev"
-	prev_btn.add_theme_font_size_override("font_size", 14)
+	prev_btn.custom_minimum_size = Vector2(85, 34)
+	prev_btn.add_theme_font_size_override("font_size", 13)
 	prev_btn.add_theme_stylebox_override("normal", btn_style)
 	prev_btn.pressed.connect(func(): _prev_stop())
 	top_hbox.add_child(prev_btn)
 
 	_play_pause_btn = Button.new()
 	_play_pause_btn.text = "⏸ Pause"
-	_play_pause_btn.add_theme_font_size_override("font_size", 14)
+	_play_pause_btn.custom_minimum_size = Vector2(95, 34)
+	_play_pause_btn.add_theme_font_size_override("font_size", 13)
 	_play_pause_btn.add_theme_stylebox_override("normal", btn_style)
 	_play_pause_btn.pressed.connect(func(): _toggle_pause())
 	top_hbox.add_child(_play_pause_btn)
 
 	var next_btn := Button.new()
 	next_btn.text = "Next ⏭"
-	next_btn.add_theme_font_size_override("font_size", 14)
+	next_btn.custom_minimum_size = Vector2(85, 34)
+	next_btn.add_theme_font_size_override("font_size", 13)
 	next_btn.add_theme_stylebox_override("normal", btn_style)
 	next_btn.pressed.connect(func(): _next_stop())
 	top_hbox.add_child(next_btn)

@@ -8,6 +8,9 @@ const AR_SCENE := "res://scenes/ARScene.tscn"
 const TOUR_SCENE := "res://scenes/TourScene.tscn"
 const COMPARE_SCENE := "res://scenes/CompareScene.tscn"
 const QUIZ_SCENE := "res://scenes/QuizScene.tscn"
+const GRAVITY_SCENE := "res://scenes/GravitySimulatorScene.tscn"
+const ECLIPSE_SCENE := "res://scenes/EclipseSimulatorScene.tscn"
+const SANDBOX_SCENE := "res://scenes/SandboxScene.tscn"
 
 var _current_scene: Node = null
 var _fade_rect: ColorRect = null
@@ -72,9 +75,18 @@ func _on_mode_selected(mode: String) -> void:
 			_load_scene(COMPARE_SCENE)
 		"quiz":
 			_load_scene(QUIZ_SCENE)
+		"gravity":
+			_load_scene(GRAVITY_SCENE)
+		"eclipse":
+			_load_scene(ECLIPSE_SCENE)
+		"sandbox":
+			_load_scene(SANDBOX_SCENE)
 
-## Allow returning to menu from any mode via back button / Escape.
+func go_to_menu() -> void:
+	if not _transitioning:
+		_load_scene(MENU_SCENE)
+
+## Allow returning to menu from any mode via back button / Escape / ui_cancel.
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
-		if _current_scene != null and not _transitioning:
-			_load_scene(MENU_SCENE)
+	if (event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE) or event.is_action_pressed("ui_cancel"):
+		go_to_menu()

@@ -200,9 +200,12 @@ func _build_header() -> void:
 		bs.set("corner_radius_" + c, 6)
 	back.add_theme_stylebox_override("normal", bs)
 	back.pressed.connect(func():
-		Input.action_press("ui_cancel")
-		await get_tree().process_frame
-		Input.action_release("ui_cancel"))
+		var main := get_node_or_null("/root/Main")
+		if main != null and main.has_method("_load_scene"):
+			main._load_scene("res://scenes/Menu.tscn")
+		else:
+			get_tree().change_scene_to_file("res://scenes/Menu.tscn")
+	)
 	row.add_child(back)
 
 	var title := Label.new()

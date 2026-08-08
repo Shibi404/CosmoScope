@@ -74,8 +74,8 @@ func _build_ui() -> void:
 	var title_container := VBoxContainer.new()
 	title_container.name = "TitleContainer"
 	title_container.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	title_container.position = Vector2(-200, 30)
-	title_container.size = Vector2(400, 120)
+	title_container.position = Vector2(-250, 20)
+	title_container.size = Vector2(500, 100)
 	title_container.alignment = BoxContainer.ALIGNMENT_CENTER
 	add_child(title_container)
 
@@ -83,7 +83,7 @@ func _build_ui() -> void:
 	title.name = "Title"
 	title.text = "🌌 CosmoScope"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 52)
+	title.add_theme_font_size_override("font_size", 44)
 	title.add_theme_color_override("font_color", Color(0.85, 0.9, 1.0))
 	title.add_theme_color_override("font_outline_color", Color(0.2, 0.3, 0.6))
 	title.add_theme_constant_override("outline_size", 6)
@@ -93,7 +93,7 @@ func _build_ui() -> void:
 	subtitle.name = "Subtitle"
 	subtitle.text = "Experience the Solar System in AR & VR"
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle.add_theme_font_size_override("font_size", 20)
+	subtitle.add_theme_font_size_override("font_size", 18)
 	subtitle.add_theme_color_override("font_color", Color(0.6, 0.65, 0.8, 0.85))
 	title_container.add_child(subtitle)
 
@@ -101,20 +101,20 @@ func _build_ui() -> void:
 	var main_vbox := VBoxContainer.new()
 	main_vbox.name = "MainVBox"
 	main_vbox.set_anchors_preset(Control.PRESET_CENTER)
-	main_vbox.position = Vector2(-390, -100)
-	main_vbox.size = Vector2(780, 260)
-	main_vbox.add_theme_constant_override("separation", 16)
+	main_vbox.position = Vector2(-360, -90)
+	main_vbox.size = Vector2(720, 240)
+	main_vbox.add_theme_constant_override("separation", 14)
 	main_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	add_child(main_vbox)
 
 	# Row 1: AR, VR, Tour
 	var row1 := HBoxContainer.new()
-	row1.add_theme_constant_override("separation", 16)
+	row1.add_theme_constant_override("separation", 12)
 	row1.alignment = BoxContainer.ALIGNMENT_CENTER
 	main_vbox.add_child(row1)
 
 	var ar_panel := _make_mode_button(
-		"🔭  AR Mode",
+		"🔭 AR Mode",
 		"Place planets on table\nvia camera/grid",
 		Color(0.15, 0.45, 0.35),
 		Color(0.1, 0.3, 0.25),
@@ -123,7 +123,7 @@ func _build_ui() -> void:
 	row1.add_child(ar_panel)
 
 	var vr_panel := _make_mode_button(
-		"🥽  VR Mode",
+		"🥽 VR Mode",
 		"Cardboard stereoscopic\nhead-look VR",
 		Color(0.25, 0.2, 0.5),
 		Color(0.15, 0.12, 0.35),
@@ -132,7 +132,7 @@ func _build_ui() -> void:
 	row1.add_child(vr_panel)
 
 	var tour_panel := _make_mode_button(
-		"🎬  Guided Tour",
+		"🎬 Guided Tour",
 		"Cinematic narrated\nSolar System flight",
 		Color(0.45, 0.25, 0.15),
 		Color(0.35, 0.18, 0.1),
@@ -140,23 +140,50 @@ func _build_ui() -> void:
 	)
 	row1.add_child(tour_panel)
 
-	# Row 2: Compare, Quiz
+	var sandbox_panel := _make_mode_button(
+		"☄️ Orbit Sandbox",
+		"Slingshot asteroids into\nKepler 3D orbits",
+		Color(0.45, 0.35, 0.15),
+		Color(0.32, 0.25, 0.1),
+		"sandbox"
+	)
+	row1.add_child(sandbox_panel)
+
+	# Row 2: Compare, Gravity, Eclipse, Quiz
 	var row2 := HBoxContainer.new()
-	row2.add_theme_constant_override("separation", 16)
+	row2.add_theme_constant_override("separation", 12)
 	row2.alignment = BoxContainer.ALIGNMENT_CENTER
 	main_vbox.add_child(row2)
 
 	var comp_panel := _make_mode_button(
-		"⚖️  Compare Tool",
-		"Side-by-side 3D planet\nscale & gravity analysis",
+		"⚖️ Compare",
+		"Side-by-side planet\nscale analysis",
 		Color(0.15, 0.3, 0.45),
 		Color(0.1, 0.2, 0.35),
 		"compare"
 	)
 	row2.add_child(comp_panel)
 
+	var gravity_panel := _make_mode_button(
+		"🚀 Gravity Jump",
+		"Physics jump height\n& mass simulator",
+		Color(0.15, 0.4, 0.3),
+		Color(0.1, 0.28, 0.2),
+		"gravity"
+	)
+	row2.add_child(gravity_panel)
+
+	var eclipse_panel := _make_mode_button(
+		"🌒 Eclipses",
+		"Solar/lunar eclipse\n3D shadow cones",
+		Color(0.35, 0.2, 0.45),
+		Color(0.25, 0.12, 0.32),
+		"eclipse"
+	)
+	row2.add_child(eclipse_panel)
+
 	var quiz_panel := _make_mode_button(
-		"🧠  Quiz Challenge",
+		"🧠 Quiz",
 		"Test 3D astronomy\nknowledge & score",
 		Color(0.4, 0.15, 0.35),
 		Color(0.3, 0.1, 0.25),
@@ -170,9 +197,9 @@ func _build_ui() -> void:
 	footer.text = "Tap a mode to begin  •  CosmoScope v1.0"
 	footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	footer.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	footer.position = Vector2(-200, -40)
-	footer.size = Vector2(400, 30)
-	footer.add_theme_font_size_override("font_size", 14)
+	footer.position = Vector2(-200, -35)
+	footer.size = Vector2(400, 25)
+	footer.add_theme_font_size_override("font_size", 13)
 	footer.add_theme_color_override("font_color", Color(0.45, 0.48, 0.6, 0.6))
 	add_child(footer)
 
@@ -180,44 +207,44 @@ func _make_mode_button(title_text: String, desc_text: String,
 		bg_color: Color, hover_color: Color, mode_id: String) -> PanelContainer:
 	var panel := PanelContainer.new()
 	panel.name = "%sPanel" % mode_id.to_upper()
-	panel.custom_minimum_size = Vector2(240, 140)
+	panel.custom_minimum_size = Vector2(160, 105)
 
 	var style := StyleBoxFlat.new()
 	style.bg_color = bg_color
-	style.corner_radius_top_left = 16
-	style.corner_radius_top_right = 16
-	style.corner_radius_bottom_left = 16
-	style.corner_radius_bottom_right = 16
+	style.corner_radius_top_left = 12
+	style.corner_radius_top_right = 12
+	style.corner_radius_bottom_left = 12
+	style.corner_radius_bottom_right = 12
 	style.border_width_left = 2
 	style.border_width_right = 2
 	style.border_width_top = 2
 	style.border_width_bottom = 2
 	style.border_color = Color(0.5, 0.6, 0.8, 0.3)
 	style.shadow_color = Color(0.0, 0.0, 0.0, 0.4)
-	style.shadow_size = 8
-	style.content_margin_left = 20
-	style.content_margin_right = 20
-	style.content_margin_top = 16
-	style.content_margin_bottom = 16
+	style.shadow_size = 6
+	style.content_margin_left = 8
+	style.content_margin_right = 8
+	style.content_margin_top = 10
+	style.content_margin_bottom = 10
 	panel.add_theme_stylebox_override("panel", style)
 
 	var vbox := VBoxContainer.new()
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_theme_constant_override("separation", 10)
+	vbox.add_theme_constant_override("separation", 6)
 	panel.add_child(vbox)
 
 	var title_lbl := Label.new()
 	title_lbl.text = title_text
 	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title_lbl.add_theme_font_size_override("font_size", 28)
+	title_lbl.add_theme_font_size_override("font_size", 18)
 	title_lbl.add_theme_color_override("font_color", Color(0.9, 0.92, 1.0))
 	vbox.add_child(title_lbl)
 
 	var desc_lbl := Label.new()
 	desc_lbl.text = desc_text
 	desc_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	desc_lbl.add_theme_font_size_override("font_size", 14)
-	desc_lbl.add_theme_color_override("font_color", Color(0.7, 0.72, 0.82, 0.8))
+	desc_lbl.add_theme_font_size_override("font_size", 12)
+	desc_lbl.add_theme_color_override("font_color", Color(0.7, 0.72, 0.82, 0.85))
 	vbox.add_child(desc_lbl)
 
 	# Make the entire panel clickable.

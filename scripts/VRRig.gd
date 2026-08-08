@@ -105,9 +105,11 @@ func _build_menu_overlay() -> void:
 	style.corner_radius_bottom_right = 8
 	back_btn.add_theme_stylebox_override("normal", style)
 	back_btn.pressed.connect(func():
-		Input.action_press("ui_cancel")
-		await get_tree().process_frame
-		Input.action_release("ui_cancel")
+		var main := get_node_or_null("/root/Main")
+		if main != null and main.has_method("_load_scene"):
+			main._load_scene("res://scenes/Menu.tscn")
+		else:
+			get_tree().change_scene_to_file("res://scenes/Menu.tscn")
 	)
 	layer.add_child(back_btn)
 

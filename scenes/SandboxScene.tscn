@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://dsandbox001"]
+
+[ext_resource type="Script" path="res://scripts/SandboxController.gd" id="1_sand"]
+
+[node name="SandboxScene" type="Node3D"]
+script = ExtResource("1_sand")
