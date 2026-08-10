@@ -17,6 +17,8 @@ var _solar: Node3D = null
 var _placed: bool = false
 var _ar_ready: bool = false
 var _status: Label = null
+var _cam_env: Environment = null
+var _feed_bound: bool = false
 
 func _ready() -> void:
 	_build_world()
@@ -24,6 +26,9 @@ func _ready() -> void:
 	_init_ar()
 
 func _init_ar() -> void:
+	# BG_CAMERA_FEED can only fetch the ARCore feed when the server is monitoring.
+	CameraServer.monitoring_feeds = true
+
 	# The Android singleton drives the ARCore session lifecycle.
 	if Engine.has_singleton("ARCorePlugin"):
 		_plugin = Engine.get_singleton("ARCorePlugin")
@@ -48,9 +53,9 @@ func _setup_camera_passthrough() -> void:
 	if cam == null:
 		cam = get_viewport().get_camera_3d()
 	if cam != null:
-		var env := Environment.new()
-		env.background_mode = Environment.BG_CAMERA_FEED
-		cam.environment = env
+		_cam_env = Environment.new()
+		_cam_env.background_mode = Environment.BG_CAMERA_FEED
+		cam.environment = _cam_env
 
 func _build_world() -> void:
 	_solar = Node3D.new()
@@ -89,10 +94,19 @@ func _process(_delta: float) -> void:
 	var inst := get_node_or_null("/root/ARCoreInterfaceInstance")
 	if inst != null and inst.has_method("get_tracking_status"):
 		track = str(inst.get_tracking_status())
-	if _placed:
-		_status.text = "Placed! Walk around the Solar System.\nTracking: %s   (tap to move)" % track
-	else:
-		_status.text = "Point at a flat surface and TAP to place.\nTracking: %s" % track
+
+	# Bind the camera-feed background to the actual ARCore feed id once it
+	# registers (it may not be the default id 1).
+	var feed_count := CameraServer.get_feed_count()
+	if _cam_env != null and not _feed_bound and feed_count > 0:
+		_cam_env.background_camera_feed_id = CameraServer.get_feed(feed_count - 1).get_id()
+		_feed_bound = true
+
+	var ids := ""
+	for i in feed_count:
+		ids += str(CameraServer.get_feed(i).get_id()) + " "
+	var hint := "Placed! Walk around it. (tap to move)" if _placed else "Point at a surface and TAP to place."
+	_status.text = "%s\nTracking:%s  feeds:%d ids:[%s] bound:%s" % [hint, track, feed_count, ids, str(_feed_bound)]
 
 func _unhandled_input(event: InputEvent) -> void:
 	var tapped: bool = (event is InputEventScreenTouch and event.pressed) \
