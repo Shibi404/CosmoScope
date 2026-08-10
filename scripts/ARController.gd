@@ -70,9 +70,9 @@ func _build_camera() -> void:
 	_camera = Camera3D.new()
 	_camera.name = "ARCamera"
 	_camera.fov = 65.0
-	_update_camera_transform()
+	add_child(_camera)  # must be in the tree before look_at() in _update_camera_transform()
 	_camera.current = true
-	add_child(_camera)
+	_update_camera_transform()
 
 	if _using_real_ar and _ar_interface != null:
 		get_viewport().use_xr = true
