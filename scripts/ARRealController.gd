@@ -30,10 +30,13 @@ func _init_ar() -> void:
 		_plugin.initializeEnvironment()
 
 	# The GDExtension XRInterface wrapper autoload starts tracking + passthrough.
+	# NOTE: only call start() here. Calling plane-detection toggles before the
+	# session exists dereferences a null session and hard-crashes (configureSession).
+	# World tracking alone anchors placed content; plane detection can be enabled
+	# later, safely, once tracking is established.
 	var inst := get_node_or_null("/root/ARCoreInterfaceInstance")
 	if inst != null and _plugin != null:
-		inst.enable_horizontal_plane_detection(true)
-		inst.start()  # initializes the interface and sets viewport.use_xr = true
+		inst.start()  # initializes the interface + session and sets viewport.use_xr = true
 		_ar_ready = true
 
 func _build_world() -> void:
