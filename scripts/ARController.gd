@@ -54,6 +54,7 @@ var _ar_head_pos: Vector3 = Vector3(0.0, 2.0, 14.0)
 var _ar_yaw: float = 0.0
 var _ar_pitch: float = 0.0
 var _dbg_label: Label = null
+var _chosen_format: int = -1
 
 func _ready() -> void:
 	_model_scale = initial_scale
@@ -91,9 +92,32 @@ func _grab_camera_feed() -> bool:
 			_cam_feed = f
 	if _cam_feed == null:
 		return false
+	_select_feed_format()  # Android requires a format before activation
 	_cam_feed.set_active(true)
 	_enter_camera_ar()
 	return true
+
+# Pick a camera format (~720p if available) so the feed can be activated.
+func _select_feed_format() -> void:
+	if _cam_feed == null or _chosen_format >= 0:
+		return
+	var formats: Array = _cam_feed.get_formats()
+	if formats.is_empty():
+		return
+	var best := 0
+	var best_score := 1.0e20
+	for i in formats.size():
+		var f: Dictionary = formats[i]
+		var w := int(f.get("width", 0))
+		var h := int(f.get("height", 0))
+		if w <= 0 or h <= 0:
+			continue
+		var score := absf(float(w) - 1280.0) + absf(float(h) - 720.0)
+		if score < best_score:
+			best_score = score
+			best = i
+	_chosen_format = best
+	_cam_feed.set_format(best, {})
 
 func _enter_camera_ar() -> void:
 	_using_camera_ar = true
@@ -370,6 +394,7 @@ func _process(delta: float) -> void:
 	# Android can leave the feed inactive after the first set_active; keep
 	# asking until it actually starts streaming.
 	if _cam_feed != null and not _cam_feed.is_active():
+		_select_feed_format()
 		_cam_feed.set_active(true)
 
 	# Live-camera AR: the gyroscope drives the view.
@@ -389,7 +414,9 @@ func _update_ar_debug() -> void:
 		OS.get_name(), perm, CameraServer.get_feed_count(),
 		"cameraAR" if _using_camera_ar else "preview"]
 	if _cam_feed != null:
-		txt += "\nfeed:%s dt:%d active:%s" % [_cam_feed.get_name(), _cam_feed.get_datatype(), str(_cam_feed.is_active())]
+		txt += "\nfeed:%s dt:%d active:%s fmt:%d/%d" % [
+			_cam_feed.get_name(), _cam_feed.get_datatype(), str(_cam_feed.is_active()),
+			_chosen_format, _cam_feed.get_formats().size()]
 	_dbg_label.text = txt
 
 func _unhandled_input(event: InputEvent) -> void:
