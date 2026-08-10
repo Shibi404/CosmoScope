@@ -20,6 +20,15 @@ var _status: Label = null
 var _cam_env: Environment = null
 var _feed_bound: bool = false
 
+# Touch gestures: long-press to drag, two fingers to scale/rotate.
+const LONG_PRESS_SEC := 0.35
+var _touches: Dictionary = {}
+var _press_pos: Vector2 = Vector2.ZERO
+var _press_time: float = 0.0
+var _dragging: bool = false
+var _pinch_dist: float = 0.0
+var _twist_angle: float = 0.0
+
 func _ready() -> void:
 	_build_world()
 	_build_hud()
@@ -105,14 +114,51 @@ func _process(_delta: float) -> void:
 	var ids := ""
 	for i in feed_count:
 		ids += str(CameraServer.get_feed(i).get_id()) + " "
-	var hint := "Placed! Walk around it. (tap to move)" if _placed else "Point at a surface and TAP to place."
-	_status.text = "%s\nTracking:%s  feeds:%d ids:[%s] bound:%s" % [hint, track, feed_count, ids, str(_feed_bound)]
+	var hint := ""
+	if not _placed:
+		hint = "Point at a surface and TAP to place."
+	elif _dragging:
+		hint = "Dragging… move your finger to reposition."
+	else:
+		hint = "Long-press & drag to move. Two fingers: scale / rotate."
+	_status.text = "%s\nTracking:%s  feeds:%d ids:[%s]" % [hint, track, feed_count, ids]
+
+	# Long-press onset: a single finger held still for a moment starts a drag.
+	if _placed and not _dragging and _touches.size() == 1:
+		var now := Time.get_ticks_msec() / 1000.0
+		var cur: Vector2 = _touches.values()[0]
+		if now - _press_time >= LONG_PRESS_SEC and cur.distance_to(_press_pos) < 40.0:
+			_dragging = true
 
 func _unhandled_input(event: InputEvent) -> void:
-	var tapped: bool = (event is InputEventScreenTouch and event.pressed) \
-		or (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed)
-	if tapped and _ar_ready:
-		_place_in_front()
+	if not _ar_ready:
+		return
+
+	if event is InputEventScreenTouch:
+		if event.pressed:
+			_touches[event.index] = event.position
+			if _touches.size() == 1:
+				_press_pos = event.position
+				_press_time = Time.get_ticks_msec() / 1000.0
+				_dragging = false
+			elif _touches.size() == 2:
+				_begin_two_finger()
+		else:
+			var was_single: bool = _touches.size() == 1
+			var held: float = Time.get_ticks_msec() / 1000.0 - _press_time
+			var moved: float = event.position.distance_to(_press_pos)
+			_touches.erase(event.index)
+			# A quick, still tap places the system (only before it's placed).
+			if was_single and not _dragging and not _placed and held < LONG_PRESS_SEC and moved < 30.0:
+				_place_in_front()
+			_dragging = false
+
+	elif event is InputEventScreenDrag:
+		_touches[event.index] = event.position
+		if _touches.size() == 1 and _placed and _dragging:
+			_drag_to(event.position)
+		elif _touches.size() == 2 and _placed:
+			_update_two_finger()
 
 func _place_in_front() -> void:
 	var cam := get_viewport().get_camera_3d()
@@ -122,6 +168,44 @@ func _place_in_front() -> void:
 	_solar.global_position = cam.global_position + fwd * place_distance + Vector3(0.0, -0.2, 0.0)
 	_solar.visible = true
 	_placed = true
+
+# Drag the system across a horizontal plane at its current height (like AR
+# Quick Look), projecting the touch ray onto that plane.
+func _drag_to(screen_pos: Vector2) -> void:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null or _solar == null:
+		return
+	var from := cam.project_ray_origin(screen_pos)
+	var dir := cam.project_ray_normal(screen_pos)
+	if absf(dir.y) < 0.0001:
+		return
+	var plane_y := _solar.global_position.y
+	var t := (plane_y - from.y) / dir.y
+	if t <= 0.0:
+		return
+	var hit := from + dir * t
+	_solar.global_position = Vector3(hit.x, plane_y, hit.z)
+
+func _begin_two_finger() -> void:
+	var pts := _touches.values()
+	_pinch_dist = (pts[0] as Vector2).distance_to(pts[1] as Vector2)
+	_twist_angle = ((pts[1] as Vector2) - (pts[0] as Vector2)).angle()
+
+# Pinch to scale, twist to rotate the placed system.
+func _update_two_finger() -> void:
+	if _solar == null:
+		return
+	var pts := _touches.values()
+	var p0: Vector2 = pts[0]
+	var p1: Vector2 = pts[1]
+	var dist := p0.distance_to(p1)
+	var angle := (p1 - p0).angle()
+	if _pinch_dist > 1.0:
+		model_scale = clampf(model_scale * (dist / _pinch_dist), 0.01, 0.4)
+		_solar.scale = Vector3.ONE * model_scale
+	_solar.rotate_y(angle - _twist_angle)
+	_pinch_dist = dist
+	_twist_angle = angle
 
 func _exit_tree() -> void:
 	get_viewport().use_xr = false
