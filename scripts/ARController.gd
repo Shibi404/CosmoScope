@@ -50,11 +50,18 @@ var _cam_feed: CameraFeed = null
 var _feed_bg: MeshInstance3D = null
 var _using_camera_ar: bool = false
 var _feed_poll_time: float = 0.0
-var _ar_head_pos: Vector3 = Vector3(0.0, 2.0, 14.0)
+var _ar_head_pos: Vector3 = Vector3.ZERO  # camera sits at origin; the model is placed in front
 var _ar_yaw: float = 0.0
 var _ar_pitch: float = 0.0
 var _dbg_label: Label = null
 var _chosen_format: int = -1
+
+# Runtime camera-image tuning (adjustable on-device via HUD buttons).
+var _feed_mat: ShaderMaterial = null
+var _cam_ycbcr: bool = true
+var _cam_rotation: int = 0
+var _cam_flip_v: bool = false
+var _place_distance: float = 7.0
 
 func _ready() -> void:
 	_model_scale = initial_scale
@@ -122,35 +129,39 @@ func _select_feed_format() -> void:
 func _enter_camera_ar() -> void:
 	_using_camera_ar = true
 	if _grid_plane != null:
-		_grid_plane.visible = false  # real floor replaces the fake grid
+		_grid_plane.visible = false  # the real world replaces the fake grid
+	# Shrink the system into a small AR model dropped in front of the viewer.
+	_model_scale = 0.12
+	if _solar != null:
+		_solar.scale = Vector3.ONE * _model_scale
 	_build_feed_background()
 	_update_ar_camera()
+	_place_in_front()
 
 func _build_feed_background() -> void:
 	# A quad parented to the camera, far behind everything, showing the feed.
+	# Both planes are wired so the YCbCr<->RGB toggle works at runtime.
 	var quad := QuadMesh.new()
-	quad.size = Vector2(300.0, 300.0)
+	quad.size = Vector2(400.0, 400.0)
 
 	var mat := ShaderMaterial.new()
 	mat.shader = CAMERA_FEED_SHADER
 	mat.render_priority = -100  # draw first, as the backdrop
 
-	var dt := _cam_feed.get_datatype()
-	var is_ycbcr := dt == CameraFeed.FEED_YCBCR or dt == CameraFeed.FEED_YCBCR_SEP
-	mat.set_shader_parameter("ycbcr", is_ycbcr)
-
 	var tex0 := CameraTexture.new()
 	tex0.camera_feed_id = _cam_feed.get_id()
-	tex0.which_feed = CameraServer.FEED_YCBCR_IMAGE  # plane 0 (== RGBA/Y == 0)
+	tex0.which_feed = CameraServer.FEED_YCBCR_IMAGE  # plane 0 (Y / RGBA, index 0)
 	tex0.camera_is_active = true
 	mat.set_shader_parameter("plane0", tex0)
 
-	if is_ycbcr:
-		var tex1 := CameraTexture.new()
-		tex1.camera_feed_id = _cam_feed.get_id()
-		tex1.which_feed = CameraServer.FEED_CBCR_IMAGE  # plane 1
-		tex1.camera_is_active = true
-		mat.set_shader_parameter("plane1", tex1)
+	var tex1 := CameraTexture.new()
+	tex1.camera_feed_id = _cam_feed.get_id()
+	tex1.which_feed = CameraServer.FEED_CBCR_IMAGE  # plane 1 (CbCr, index 1)
+	tex1.camera_is_active = true
+	mat.set_shader_parameter("plane1", tex1)
+
+	_feed_mat = mat
+	_apply_cam_params()
 
 	_feed_bg = MeshInstance3D.new()
 	_feed_bg.name = "CameraFeedBG"
@@ -158,6 +169,21 @@ func _build_feed_background() -> void:
 	_feed_bg.material_override = mat
 	_feed_bg.position = Vector3(0.0, 0.0, -150.0)  # far in front of the camera
 	_camera.add_child(_feed_bg)
+
+func _apply_cam_params() -> void:
+	if _feed_mat == null:
+		return
+	_feed_mat.set_shader_parameter("ycbcr", _cam_ycbcr)
+	_feed_mat.set_shader_parameter("rotation", _cam_rotation)
+	_feed_mat.set_shader_parameter("flip_v", _cam_flip_v)
+	_feed_mat.set_shader_parameter("flip_h", false)
+
+# Drop the solar system in front of wherever the camera is currently looking.
+func _place_in_front() -> void:
+	if _solar == null or _camera == null:
+		return
+	var fwd := -_camera.global_transform.basis.z
+	_solar.global_position = _ar_head_pos + fwd * _place_distance + Vector3(0.0, -1.0, 0.0)
 
 func _update_ar_camera() -> void:
 	if _camera == null:
@@ -328,6 +354,38 @@ func _build_hud() -> void:
 	_dbg_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud_layer.add_child(_dbg_label)
 
+	# AR camera-tuning + placement controls (bottom-left).
+	var ctrls := HBoxContainer.new()
+	ctrls.add_theme_constant_override("separation", 6)
+	ctrls.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	ctrls.position = Vector2(14, -52)
+	_hud_layer.add_child(ctrls)
+	ctrls.add_child(_mk_btn("Color", func() -> void:
+		_cam_ycbcr = not _cam_ycbcr
+		_apply_cam_params()))
+	ctrls.add_child(_mk_btn("Rotate", func() -> void:
+		_cam_rotation = (_cam_rotation + 1) % 4
+		_apply_cam_params()))
+	ctrls.add_child(_mk_btn("Flip", func() -> void:
+		_cam_flip_v = not _cam_flip_v
+		_apply_cam_params()))
+	ctrls.add_child(_mk_btn("📍 Place", func() -> void: _place_in_front()))
+
+func _mk_btn(text: String, cb: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.add_theme_font_size_override("font_size", 14)
+	var st := StyleBoxFlat.new()
+	st.bg_color = Color(0.12, 0.15, 0.25, 0.85)
+	st.set_corner_radius_all(8)
+	st.content_margin_left = 10
+	st.content_margin_right = 10
+	st.content_margin_top = 6
+	st.content_margin_bottom = 6
+	b.add_theme_stylebox_override("normal", st)
+	b.pressed.connect(cb)
+	return b
+
 func _build_info_panel() -> void:
 	_info_panel = PanelContainer.new()
 	_info_panel.name = "InfoPanel"
@@ -397,11 +455,12 @@ func _process(delta: float) -> void:
 		_select_feed_format()
 		_cam_feed.set_active(true)
 
-	# Live-camera AR: the gyroscope drives the view.
+	# Live-camera AR: the gyroscope drives the view (signs inverted vs VR
+	# because the phone is held out with the screen facing the user).
 	var g := Input.get_gyroscope()
 	if g.length() > 0.0001:
-		_ar_yaw += g.y * delta
-		_ar_pitch = clampf(_ar_pitch + g.x * delta, -1.4, 1.4)
+		_ar_yaw -= g.y * delta
+		_ar_pitch = clampf(_ar_pitch - g.x * delta, -1.4, 1.4)
 	_update_ar_camera()
 
 func _update_ar_debug() -> void:
@@ -462,7 +521,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventScreenDrag:
 		_touches[event.index] = event.position
 		if _using_camera_ar:
-			return  # gyroscope drives the view in camera AR
+			# Gyro drives the view; two-finger pinch scales the model.
+			if _touches.size() == 2:
+				var k := _touches.keys()
+				var d: float = (_touches[k[0]] as Vector2).distance_to(_touches[k[1]] as Vector2)
+				if _prev_pinch_dist > 10.0 and _solar != null:
+					_model_scale = clampf(_model_scale * (d / _prev_pinch_dist), 0.03, 1.0)
+					_solar.scale = Vector3.ONE * _model_scale
+				_prev_pinch_dist = d
+			return
 		if _touches.size() == 1:
 			_yaw -= event.relative.x * 0.005
 			_pitch = clampf(_pitch - event.relative.y * 0.005, -1.4, 1.4)
