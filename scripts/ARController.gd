@@ -53,6 +53,7 @@ var _feed_poll_time: float = 0.0
 var _ar_head_pos: Vector3 = Vector3(0.0, 2.0, 14.0)
 var _ar_yaw: float = 0.0
 var _ar_pitch: float = 0.0
+var _dbg_label: Label = null
 
 func _ready() -> void:
 	_model_scale = initial_scale
@@ -69,9 +70,15 @@ func _ready() -> void:
 # stays in the desktop/laptop preview so nothing breaks where there is no camera.
 func _start_camera_feed() -> void:
 	if OS.get_name() == "Android":
-		OS.request_permissions()
+		OS.request_permission("android.permission.CAMERA")
 	CameraServer.monitoring_feeds = true
-	_grab_camera_feed()
+	# Actual entry into camera-AR happens in _process, once permission is
+	# granted and a feed is streaming (see _try_enter_camera_ar).
+
+func _has_camera_permission() -> bool:
+	if OS.get_name() != "Android":
+		return true
+	return "android.permission.CAMERA" in OS.get_granted_permissions()
 
 func _grab_camera_feed() -> bool:
 	for i in CameraServer.get_feed_count():
@@ -287,6 +294,16 @@ func _build_hud() -> void:
 	instr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud_layer.add_child(instr)
 
+	# Temporary AR camera diagnostics (remove once the feed works).
+	_dbg_label = Label.new()
+	_dbg_label.position = Vector2(14, 92)
+	_dbg_label.add_theme_font_size_override("font_size", 14)
+	_dbg_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.35))
+	_dbg_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	_dbg_label.add_theme_constant_override("outline_size", 4)
+	_dbg_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hud_layer.add_child(_dbg_label)
+
 func _build_info_panel() -> void:
 	_info_panel = PanelContainer.new()
 	_info_panel.name = "InfoPanel"
@@ -340,20 +357,35 @@ func _build_info_panel() -> void:
 	_hud_layer.add_child(_info_panel)
 
 func _process(delta: float) -> void:
+	_update_ar_debug()
 	if not _using_camera_ar:
-		# Poll for a camera feed for the first few seconds (permission is async).
-		if _feed_poll_time < 6.0:
+		# Wait (permission is async) until camera access is granted AND a feed
+		# is streaming, then switch in. Until then we stay in the preview.
+		if _feed_poll_time < 30.0:
 			_feed_poll_time += delta
-			if _cam_feed == null:
+			if _has_camera_permission() and CameraServer.get_feed_count() > 0:
 				_grab_camera_feed()
 		return
 
-	# Live-camera AR: the gyroscope drives the view (mouse-drag on desktop).
+	# Live-camera AR: the gyroscope drives the view.
 	var g := Input.get_gyroscope()
 	if g.length() > 0.0001:
 		_ar_yaw += g.y * delta
 		_ar_pitch = clampf(_ar_pitch + g.x * delta, -1.4, 1.4)
 	_update_ar_camera()
+
+func _update_ar_debug() -> void:
+	if _dbg_label == null:
+		return
+	var perm := "n/a"
+	if OS.get_name() == "Android":
+		perm = "yes" if _has_camera_permission() else "NO"
+	var txt := "AR debug — OS:%s  cam-perm:%s\nfeeds:%d   mode:%s" % [
+		OS.get_name(), perm, CameraServer.get_feed_count(),
+		"cameraAR" if _using_camera_ar else "preview"]
+	if _cam_feed != null:
+		txt += "\nfeed:%s dt:%d active:%s" % [_cam_feed.get_name(), _cam_feed.get_datatype(), str(_cam_feed.is_active())]
+	_dbg_label.text = txt
 
 func _unhandled_input(event: InputEvent) -> void:
 	# Mouse drag camera orbit.

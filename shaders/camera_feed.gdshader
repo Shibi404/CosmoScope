@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode unshaded, cull_disabled, depth_draw_never, depth_test_disabled;
+render_mode unshaded, cull_disabled, depth_draw_never;
 
 // Draws the live device camera feed as a full-screen backdrop for AR mode.
 // Handles both RGB feeds and the YCbCr (two-plane) feeds most phones provide.
