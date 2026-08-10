@@ -1,6 +1,10 @@
-[gd_scene format=3 uid="uid://rscene001"]
+[gd_scene load_steps=2 format=3 uid="uid://rscene001"]
 
-[ext_resource type="Script" path="res://scripts/ARController.gd" id="1_ar"]
+[ext_resource type="Script" path="res://scripts/ARRealController.gd" id="1_ar"]
 
 [node name="ARScene" type="Node3D"]
 script = ExtResource("1_ar")
+
+[node name="XROrigin3D" type="XROrigin3D" parent="."]
+
+[node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D"]
