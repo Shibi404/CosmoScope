@@ -367,6 +367,11 @@ func _process(delta: float) -> void:
 				_grab_camera_feed()
 		return
 
+	# Android can leave the feed inactive after the first set_active; keep
+	# asking until it actually starts streaming.
+	if _cam_feed != null and not _cam_feed.is_active():
+		_cam_feed.set_active(true)
+
 	# Live-camera AR: the gyroscope drives the view.
 	var g := Input.get_gyroscope()
 	if g.length() > 0.0001:
