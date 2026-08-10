@@ -38,6 +38,19 @@ func _init_ar() -> void:
 	if inst != null and _plugin != null:
 		inst.start()  # initializes the interface + session and sets viewport.use_xr = true
 		_ar_ready = true
+		_setup_camera_passthrough()
+
+# The ARCore camera image is exposed as a CameraFeed; Godot draws it as the 3D
+# background only when the camera's environment uses BG_CAMERA_FEED. Without
+# this the viewport clears to grey and hides the passthrough.
+func _setup_camera_passthrough() -> void:
+	var cam: Camera3D = get_node_or_null("XROrigin3D/XRCamera3D")
+	if cam == null:
+		cam = get_viewport().get_camera_3d()
+	if cam != null:
+		var env := Environment.new()
+		env.background_mode = Environment.BG_CAMERA_FEED
+		cam.environment = env
 
 func _build_world() -> void:
 	_solar = Node3D.new()
