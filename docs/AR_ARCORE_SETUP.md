@@ -1,5 +1,37 @@
 # Real AR (ARCore) setup — `godot_arcore` plugin
 
+## ✅ STATUS: plugin BUILT and integrated into CosmoScope
+
+The native plugin was built successfully and the addon is committed at
+`addons/ARCorePlugin/`, wired as an autoload + editor export plugin, and the
+AR scene now uses `ARRealController.gd` (world-tracked, tap-to-place).
+
+What it took (all version pins that had to be bumped):
+- Built `godot-cpp` **4.5** (the plugin's C++ needs the newer `CameraFeed` API;
+  the bundled 4.3 submodule was too old). Forward-compatible with the 4.7 engine.
+- NDK: passed `ndk_version=30.0.15729638` (installed r30) to SCons.
+- JDK: the Gradle build needs **JDK 17** — a local copy lives at
+  `C:\Academics\SEM_7\ARVR\jdk17\jdk-17.0.20+8` (Android Studio's JBR is JDK 25,
+  too new; system JDKs are 11/21). Set this as the editor's Android Java SDK Path.
+- Enabled `use_gradle_build` + `minSdk 24` in the Android export preset.
+
+### To deploy on device
+1. In Godot: **Project → Reload Current Project** (picks up the new autoload,
+   editor plugin, and export preset). Desktop will log ARCoreInterface autoload
+   errors — normal, the native class only exists in the Android build.
+2. **Editor Settings → Export → Android → Java SDK Path** =
+   `C:\Academics\SEM_7\ARVR\jdk17\jdk-17.0.20+8`.
+3. **Project → Install Android Build Template** (needed for Gradle build).
+4. **Project → Export → Android**: confirm **Use Gradle Build** ✅, Min SDK 24,
+   Camera permission ✅.
+5. Deploy to phone (first Gradle export downloads ARCore + appcompat — slow).
+6. On device: open **AR mode**, grant Camera, install/allow **Google Play
+   Services for AR** if prompted, point at a flat surface, TAP to place.
+
+---
+## (Original build guide below, for reference)
+
+
 Goal: replace the camera "magic-window" with **true plane-tracking AR** (planets
 pinned to a real surface as you walk around). This needs the
 [`godot_arcore`](https://github.com/GodotVR/godot_arcore) **GDExtension** plugin
