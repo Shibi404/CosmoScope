@@ -29,9 +29,14 @@ var _dragging: bool = false
 var _pinch_dist: float = 0.0
 var _twist_angle: float = 0.0
 
+var _planets: Array[Node3D] = []
+var _info_panel: PanelContainer = null
+var _info_rich: RichTextLabel = null
+
 func _ready() -> void:
 	_build_world()
 	_build_hud()
+	_build_info_panel()
 	_init_ar()
 
 func _init_ar() -> void:
@@ -73,6 +78,7 @@ func _build_world() -> void:
 	_solar.scale = Vector3.ONE * model_scale
 	_solar.visible = false  # shown once the user taps to place it
 	add_child(_solar)
+	_planets = _solar.get_planet_bodies()
 
 	# A fill light; ARCore light-estimation could later drive this for realism.
 	var light := DirectionalLight3D.new()
@@ -149,9 +155,16 @@ func _unhandled_input(event: InputEvent) -> void:
 			var held: float = Time.get_ticks_msec() / 1000.0 - _press_time
 			var moved: float = event.position.distance_to(_press_pos)
 			_touches.erase(event.index)
-			# A quick, still tap places the system (only before it's placed).
-			if was_single and not _dragging and not _placed and held < LONG_PRESS_SEC and moved < 30.0:
-				_place_in_front()
+			# A quick, still tap: place the system, or (once placed) select a planet.
+			if was_single and not _dragging and held < LONG_PRESS_SEC and moved < 30.0:
+				if not _placed:
+					_place_in_front()
+				else:
+					var hit := _try_select_planet(event.position)
+					if hit != null:
+						_show_planet_info(hit)
+					elif _info_panel != null:
+						_info_panel.visible = false
 			_dragging = false
 
 	elif event is InputEventScreenDrag:
@@ -186,6 +199,105 @@ func _drag_to(screen_pos: Vector2) -> void:
 		return
 	var hit := from + dir * t
 	_solar.global_position = Vector3(hit.x, plane_y, hit.z)
+
+func _build_info_panel() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 11
+	add_child(layer)
+
+	_info_panel = PanelContainer.new()
+	_info_panel.visible = false
+	_info_panel.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
+	_info_panel.offset_left = -300.0
+	_info_panel.offset_right = -16.0
+	_info_panel.offset_top = -150.0
+	_info_panel.offset_bottom = 150.0
+
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.06, 0.07, 0.13, 0.92)
+	style.set_corner_radius_all(14)
+	style.set_border_width_all(2)
+	style.border_color = Color(0.4, 0.6, 0.95, 0.6)
+	style.content_margin_left = 16
+	style.content_margin_right = 16
+	style.content_margin_top = 14
+	style.content_margin_bottom = 14
+	_info_panel.add_theme_stylebox_override("panel", style)
+	layer.add_child(_info_panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 10)
+	_info_panel.add_child(vbox)
+
+	_info_rich = RichTextLabel.new()
+	_info_rich.bbcode_enabled = true
+	_info_rich.fit_content = true
+	_info_rich.scroll_active = false
+	_info_rich.custom_minimum_size = Vector2(268, 0)
+	_info_rich.add_theme_color_override("default_color", Color(0.9, 0.93, 0.98))
+	vbox.add_child(_info_rich)
+
+	var close := Button.new()
+	close.text = "✕ Close"
+	close.add_theme_font_size_override("font_size", 14)
+	close.pressed.connect(func() -> void: _info_panel.visible = false)
+	vbox.add_child(close)
+
+# Ray-pick the nearest planet under the tap (generous radius, since the AR
+# model is small).
+func _try_select_planet(screen_pos: Vector2) -> Node3D:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null or _solar == null:
+		return null
+	var from := cam.project_ray_origin(screen_pos)
+	var dir := cam.project_ray_normal(screen_pos)
+	var best: Node3D = null
+	var best_proj := 1.0e20
+	for p in _planets:
+		if not is_instance_valid(p):
+			continue
+		var to_p: Vector3 = p.global_position - from
+		var proj: float = to_p.dot(dir)
+		if proj < 0.0:
+			continue
+		var closest: Vector3 = from + dir * proj
+		var data: Dictionary = p.get_meta("data", {})
+		var r: float = float(data.get("radius", 0.3)) * _solar.scale.x * 2.5
+		if closest.distance_to(p.global_position) < r and proj < best_proj:
+			best = p
+			best_proj = proj
+	return best
+
+func _show_planet_info(planet: Node3D) -> void:
+	if _info_rich == null:
+		return
+	var d: Dictionary = planet.get_meta("data", {})
+	if d.is_empty():
+		return
+	var t := "[b][font_size=20]%s[/font_size][/b]\n\n" % d.name
+	t += "Diameter: %s km\n" % _commas(int(d.get("diameter_km", 0)))
+	t += "Distance: %s M km from Sun\n" % _trim(float(d.get("sun_dist_mkm", 0.0)))
+	t += "Year: %s\n" % str(d.get("year", "-"))
+	t += "Day: %s\n" % str(d.get("day", "-"))
+	t += "Moons: %d\n" % int(d.get("moons", 0))
+	t += "Gravity: %.2fx Earth\n" % float(d.get("gravity_g", 1.0))
+	t += "\n[i]%s[/i]" % str(d.get("fact", ""))
+	_info_rich.text = t
+	_info_panel.visible = true
+
+func _commas(n: int) -> String:
+	var s := str(n)
+	var out := ""
+	var c := 0
+	for i in range(s.length() - 1, -1, -1):
+		out = s[i] + out
+		c += 1
+		if c % 3 == 0 and i > 0:
+			out = "," + out
+	return out
+
+func _trim(v: float) -> String:
+	return "%.1f" % v if v != floor(v) else str(int(v))
 
 func _begin_two_finger() -> void:
 	var pts := _touches.values()
