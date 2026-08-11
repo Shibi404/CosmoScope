@@ -338,6 +338,13 @@ func _go_to_menu() -> void:
 		get_tree().change_scene_to_file("res://scenes/Menu.tscn")
 
 func _exit_tree() -> void:
+	# Fully tear down XR, otherwise the viewport stays resized to the XR render
+	# target and the next scene's UI (the menu) renders tiny.
 	get_viewport().use_xr = false
+	var inst := get_node_or_null("/root/ARCoreInterfaceInstance")
+	if inst != null and inst.has_method("get_interface"):
+		var iface = inst.get_interface()
+		if iface != null and iface.is_initialized():
+			iface.uninitialize()
 	if _plugin != null:
 		_plugin.uninitializeEnvironment()
