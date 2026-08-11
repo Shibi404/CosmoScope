@@ -23,6 +23,8 @@ var _cutaway_enabled: bool = false
 @export var show_orbits: bool = true
 ## Animation speed for the enhanced<->true relative-size morph.
 @export var scale_morph_speed: float = 2.0
+## Additive corona glow around the Sun (nice at VR scale, hazy up close in AR).
+@export var show_corona: bool = true
 ## Show floating name labels above each planet.
 @export var show_labels: bool = true
 ## Build the asteroid belt.
@@ -126,15 +128,16 @@ func _build_sun() -> void:
 	sun.add_child(light)
 
 	# Additive, camera-facing corona so the Sun glows as a radiant star.
-	var corona := MeshInstance3D.new()
-	corona.name = "Corona"
-	var quad := QuadMesh.new()
-	quad.size = Vector2.ONE * SolarSystemData.SUN.radius * 5.0
-	corona.mesh = quad
-	var cmat := ShaderMaterial.new()
-	cmat.shader = CORONA_SHADER
-	corona.material_override = cmat
-	sun.add_child(corona)
+	if show_corona:
+		var corona := MeshInstance3D.new()
+		corona.name = "Corona"
+		var quad := QuadMesh.new()
+		quad.size = Vector2.ONE * SolarSystemData.SUN.radius * 5.0
+		corona.mesh = quad
+		var cmat := ShaderMaterial.new()
+		cmat.shader = CORONA_SHADER
+		corona.material_override = cmat
+		sun.add_child(corona)
 
 	# Solar flares — particle system erupting from the Sun's surface.
 	_add_solar_flares(sun)

@@ -69,6 +69,7 @@ func _setup_camera_passthrough() -> void:
 func _build_world() -> void:
 	_solar = Node3D.new()
 	_solar.set_script(SolarSystemScript)
+	_solar.set("show_corona", false)  # the additive corona reads as haze up close in AR
 	_solar.scale = Vector3.ONE * model_scale
 	_solar.visible = false  # shown once the user taps to place it
 	add_child(_solar)
