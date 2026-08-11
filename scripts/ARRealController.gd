@@ -92,8 +92,24 @@ func _build_hud() -> void:
 	layer.layer = 10
 	add_child(layer)
 
+	# Back-to-menu button (top-left).
+	var back := Button.new()
+	back.text = "← Menu"
+	back.position = Vector2(16, 16)
+	back.add_theme_font_size_override("font_size", 16)
+	var bs := StyleBoxFlat.new()
+	bs.bg_color = Color(0.12, 0.15, 0.25, 0.9)
+	bs.set_corner_radius_all(8)
+	bs.content_margin_left = 14
+	bs.content_margin_right = 14
+	bs.content_margin_top = 8
+	bs.content_margin_bottom = 8
+	back.add_theme_stylebox_override("normal", bs)
+	back.pressed.connect(_go_to_menu)
+	layer.add_child(back)
+
 	_status = Label.new()
-	_status.position = Vector2(16, 16)
+	_status.position = Vector2(16, 66)
 	_status.add_theme_font_size_override("font_size", 18)
 	_status.add_theme_color_override("font_color", Color(0.5, 1.0, 0.6))
 	_status.add_theme_color_override("font_outline_color", Color.BLACK)
@@ -313,6 +329,13 @@ func _update_two_finger() -> void:
 	_solar.rotate_y(angle - _twist_angle)
 	_pinch_dist = dist
 	_twist_angle = angle
+
+func _go_to_menu() -> void:
+	var main := get_node_or_null("/root/Main")
+	if main != null and main.has_method("go_to_menu"):
+		main.go_to_menu()
+	else:
+		get_tree().change_scene_to_file("res://scenes/Menu.tscn")
 
 func _exit_tree() -> void:
 	get_viewport().use_xr = false
