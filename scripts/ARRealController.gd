@@ -32,6 +32,7 @@ var _twist_angle: float = 0.0
 var _planets: Array[Node3D] = []
 var _info_panel: PanelContainer = null
 var _info_rich: RichTextLabel = null
+var _last_tap_info: String = ""
 
 func _ready() -> void:
 	_build_world()
@@ -118,9 +119,6 @@ func _process(_delta: float) -> void:
 		_cam_env.background_camera_feed_id = CameraServer.get_feed(feed_count - 1).get_id()
 		_feed_bound = true
 
-	var ids := ""
-	for i in feed_count:
-		ids += str(CameraServer.get_feed(i).get_id()) + " "
 	var hint := ""
 	if not _placed:
 		hint = "Point at a surface and TAP to place."
@@ -128,7 +126,7 @@ func _process(_delta: float) -> void:
 		hint = "Dragging… move your finger to reposition."
 	else:
 		hint = "Long-press & drag to move. Two fingers: scale / rotate."
-	_status.text = "%s\nTracking:%s  feeds:%d ids:[%s]" % [hint, track, feed_count, ids]
+	_status.text = "%s\nTracking:%s  feeds:%d  %s" % [hint, track, feed_count, _last_tap_info]
 
 	# Long-press onset: a single finger held still for a moment starts a drag.
 	if _placed and not _dragging and _touches.size() == 1:
@@ -156,7 +154,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			var moved: float = event.position.distance_to(_press_pos)
 			_touches.erase(event.index)
 			# A quick, still tap: place the system, or (once placed) select a planet.
-			if was_single and not _dragging and held < LONG_PRESS_SEC and moved < 30.0:
+			if was_single and not _dragging and held < LONG_PRESS_SEC and moved < 45.0:
 				if not _placed:
 					_place_in_front()
 				else:
@@ -243,29 +241,25 @@ func _build_info_panel() -> void:
 	close.pressed.connect(func() -> void: _info_panel.visible = false)
 	vbox.add_child(close)
 
-# Ray-pick the nearest planet under the tap (generous radius, since the AR
-# model is small).
+# Screen-space pick: choose the planet whose projected position is nearest the
+# tap (within a pixel tolerance). Far more forgiving than a 3D radius when the
+# AR model is small and orbiting.
 func _try_select_planet(screen_pos: Vector2) -> Node3D:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null or _solar == null:
+		_last_tap_info = "tap: no camera"
 		return null
-	var from := cam.project_ray_origin(screen_pos)
-	var dir := cam.project_ray_normal(screen_pos)
 	var best: Node3D = null
-	var best_proj := 1.0e20
+	var best_d := 110.0  # pixel tolerance
 	for p in _planets:
-		if not is_instance_valid(p):
+		if not is_instance_valid(p) or cam.is_position_behind(p.global_position):
 			continue
-		var to_p: Vector3 = p.global_position - from
-		var proj: float = to_p.dot(dir)
-		if proj < 0.0:
-			continue
-		var closest: Vector3 = from + dir * proj
-		var data: Dictionary = p.get_meta("data", {})
-		var r: float = float(data.get("radius", 0.3)) * _solar.scale.x * 2.5
-		if closest.distance_to(p.global_position) < r and proj < best_proj:
+		var sp := cam.unproject_position(p.global_position)
+		var d := sp.distance_to(screen_pos)
+		if d < best_d:
+			best_d = d
 			best = p
-			best_proj = proj
+	_last_tap_info = "tap:%s d=%d" % ["none" if best == null else str(best.name), int(best_d)]
 	return best
 
 func _show_planet_info(planet: Node3D) -> void:
