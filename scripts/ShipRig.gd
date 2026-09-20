@@ -28,11 +28,11 @@ const SpaceEnvScript := preload("res://scripts/SpaceEnvironment.gd")
 ## units behind and chase_up units above this point).
 @export var spawn_position: Vector3 = Vector3(0.0, 2.0, 8.0)
 ## Thrust acceleration (world units / s²).
-@export var thrust_accel: float = 8.0
+@export var thrust_accel: float = 2.5
 ## Peak speed clamp.
-@export var max_speed: float = 30.0
+@export var max_speed: float = 8.0
 ## Fraction of velocity lost per second (arcade drag).
-@export var drag_per_sec: float = 0.35
+@export var drag_per_sec: float = 0.25
 ## Full tank size.
 @export var fuel_capacity: float = 100.0
 ## Fuel drained per second while thrusting.
@@ -48,7 +48,7 @@ const SpaceEnvScript := preload("res://scripts/SpaceEnvironment.gd")
 ## Path to the .glb hull model. Any craft_*.glb from Kenney's Space Kit works.
 @export_file("*.glb") var ship_model_path: String = "res://models/kenney_space_kit/craft_speederA.glb"
 ## Uniform scale applied to the imported model.
-@export var ship_scale: float = 1.0
+@export var ship_scale: float = 0.5
 ## Corrective rotation for the imported model if it doesn't face -Z (Godot
 ## forward) out of the box. Kenney speeders usually don't need this; if the
 ## ship appears to be flying backward, set the Y component to 180.
@@ -56,9 +56,9 @@ const SpaceEnvScript := preload("res://scripts/SpaceEnvironment.gd")
 
 # --- Chase camera (third-person) ---
 ## Camera stand-off behind the ship, along the ship's local +Z (backward).
-@export var chase_back: float = 3.5
+@export var chase_back: float = 2.5
 ## Camera height above the ship, along the ship's local +Y.
-@export var chase_up: float = 1.4
+@export var chase_up: float = 1.0
 
 var _left_viewport: SubViewport   # single fullscreen viewport (name kept so
                                   # existing add_child call sites stay stable)
