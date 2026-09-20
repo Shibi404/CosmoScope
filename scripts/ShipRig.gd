@@ -15,6 +15,8 @@ extends Node
 
 const SolarSystemScript := preload("res://scripts/SolarSystem.gd")
 const SpaceEnvScript := preload("res://scripts/SpaceEnvironment.gd")
+const MissionsScript := preload("res://scripts/ShipMissions.gd")
+const XRGameScript := preload("res://scripts/xr/XRGame.gd")
 
 # --- Head-look tuning ---
 @export var fov: float = 75.0
@@ -50,6 +52,15 @@ const SpaceEnvScript := preload("res://scripts/SpaceEnvironment.gd")
 ## Extra buffer added to collision so the ship stops just outside the surface
 ## rather than intersecting it.
 @export var collision_skin: float = 0.15
+## Desktop mouse flight: the cursor steers (offset from screen centre), hold
+## left click to thrust, right-drag to look around. Toggle with M.
+@export var mouse_flight: bool = true
+## VR: "auto" starts OpenXR when a headset / runtime is present and otherwise keeps the
+## normal desktop / phone mode; "off" never uses VR; "simulate" builds the full VR rig
+## (cockpit, hands, HUD panel) without a headset, for testing.
+@export_enum("auto", "off", "simulate") var vr_mode: String = "auto"
+## Fraction of the half-screen around the centre where the cursor does nothing.
+@export_range(0.0, 0.5) var mouse_deadzone: float = 0.10
 
 # --- Ship visual model (Kenney Space Kit, CC0 — see models/kenney_space_kit/LICENSE.txt) ---
 ## Path to the .glb hull model. Any craft_*.glb from Kenney's Space Kit works.
@@ -67,7 +78,7 @@ const SpaceEnvScript := preload("res://scripts/SpaceEnvironment.gd")
 ## Camera height above the ship, along the ship's local +Y.
 @export var chase_up: float = 1.0
 
-var _left_viewport: SubViewport   # single fullscreen viewport (name kept so
+var _left_viewport: Node   # world container: a SubViewport on desktop / phone, a Node3D in VR (name kept so
                                   # existing add_child call sites stay stable)
 var _left_cam: Camera3D
 var _left_rect: TextureRect
@@ -100,14 +111,33 @@ var _hud_hint: Label = null
 var _fuel_bar: ProgressBar = null
 var _fuel_bar_label: Label = null
 
+# Game layer: docking, scanner, missions (see ShipMissions.gd).
+var _missions: Node = null
+
+# VR layer (XRGame) or null when running in the normal desktop / phone mode.
+var _vr: Node = null
+## Thrust multiplier 0..1 (VR throttle lever; 1 on desktop / phone).
+var _throttle: float = 1.0
+## External steering added to the keyboard / mouse input (VR flight stick), -1..1.
+var ext_yaw: float = 0.0
+var ext_pitch: float = 0.0
+
 
 func _ready() -> void:
 	_pos = spawn_position
 	_fuel = fuel_capacity
+	_vr = XRGameScript.create(self)
+	if _vr != null:
+		add_child(_vr)
 	_build_view()
 	_build_world()
 	_build_ship_model()
 	_build_hud()
+	_missions = MissionsScript.new()
+	_missions.rig = self
+	add_child(_missions)
+	if _vr != null:
+		_vr.finish(_missions)
 	_build_menu_overlay()
 	_layout()
 	get_viewport().size_changed.connect(_layout)
@@ -116,6 +146,16 @@ func _ready() -> void:
 # ---- Rendering plumbing (single fullscreen viewport + camera) ----
 
 func _build_view() -> void:
+	if _vr != null:
+		# VR: the world lives in the main viewport, seen through the XR camera.
+		var world := Node3D.new()
+		world.name = "World"
+		add_child(world)
+		_left_viewport = world
+		_vr.attach_world(world)
+		_left_cam = _vr.player.camera
+		get_viewport().msaa_3d = Viewport.MSAA_2X
+		return
 	_left_viewport = SubViewport.new()
 	_left_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	_left_viewport.msaa_3d = Viewport.MSAA_2X
@@ -144,7 +184,16 @@ func _build_world() -> void:
 	_sun = _solar.get_node_or_null("Sun") as Node3D
 
 
+# In VR the HUD's CanvasLayers live inside the HUD panel's SubViewport instead of the screen.
+func _hud_parent() -> Node:
+	if _vr != null:
+		return _vr.hud_viewport()
+	return self
+
+
 func _layout() -> void:
+	if _vr != null:
+		return
 	var view := get_viewport().get_visible_rect().size
 	var full_w := int(view.x)
 	var full_h := int(view.y)
@@ -176,6 +225,8 @@ func _build_ship_model() -> void:
 		deg_to_rad(ship_model_rotation_deg.z),
 	)
 	_ship_root.add_child(hull_holder)
+	# In VR the cockpit is the ship: the outer hull mesh would surround the player.
+	hull_holder.visible = _vr == null
 
 	var packed := load(ship_model_path) as PackedScene
 	if packed != null:
@@ -245,7 +296,7 @@ func _recenter_model(instance: Node3D) -> void:
 func _build_hud() -> void:
 	_hud_layer = CanvasLayer.new()
 	_hud_layer.layer = 10  # under the menu back button (which lives at layer 20)
-	add_child(_hud_layer)
+	_hud_parent().add_child(_hud_layer)
 
 	_hud_speed = _make_hud_label(24, Color(0.85, 0.95, 1.0))
 	_hud_speed.set_anchors_preset(Control.PRESET_TOP_LEFT)
@@ -324,7 +375,7 @@ func _make_hud_label(size: int, color: Color) -> Label:
 func _build_menu_overlay() -> void:
 	var layer := CanvasLayer.new()
 	layer.layer = 20
-	add_child(layer)
+	_hud_parent().add_child(layer)
 
 	var back_btn := Button.new()
 	back_btn.text = "← Menu"
@@ -345,12 +396,16 @@ func _build_menu_overlay() -> void:
 		else:
 			get_tree().change_scene_to_file("res://scenes/Menu.tscn")
 	)
+	back_btn.visible = _vr == null   # the 2D menu is not usable in a headset
 	layer.add_child(back_btn)
 
 
 # ---- Per-frame update ----
 
 func _process(delta: float) -> void:
+	if _vr != null:
+		_vr.update(delta)
+	_missions.update(delta)
 	_update_orientation(delta)
 	_update_ship(delta)
 	_update_cameras()
@@ -358,7 +413,7 @@ func _process(delta: float) -> void:
 
 
 func _update_orientation(delta: float) -> void:
-	if use_gyroscope:
+	if use_gyroscope and _vr == null:
 		var g := Input.get_gyroscope()
 		_yaw += g[gyro_yaw_axis] * gyro_yaw_sign * delta
 		_pitch += g[gyro_pitch_axis] * gyro_pitch_sign * delta
@@ -379,14 +434,38 @@ func _update_ship(delta: float) -> void:
 		pitch_input -= 1.0
 	if Input.is_physical_key_pressed(KEY_S):
 		pitch_input += 1.0
+	# Mouse flight: cursor offset from screen centre sets turn rate.
+	# Autopilot / docked / rover-cam own the hull: ignore manual steering then.
+	var manual: bool = not _missions.hold_ship and not _missions.autopilot_active
+	if not manual:
+		yaw_input = 0.0
+		pitch_input = 0.0
+	if manual and _vr == null and not _missions.dialog_open and mouse_flight and not OS.has_feature("mobile"):
+		var vp := get_viewport()
+		var half := vp.get_visible_rect().size * 0.5
+		var mp := vp.get_mouse_position()
+		if half.x > 0.0 and half.y > 0.0 and Rect2(Vector2.ZERO, half * 2.0).has_point(mp):
+			var off := (mp - half) / half
+			yaw_input -= _mouse_axis(off.x)
+			pitch_input -= _mouse_axis(off.y)
+	if manual:
+		yaw_input += ext_yaw
+		pitch_input += ext_pitch
 	_ship_yaw += yaw_input * steer_rate * delta
 	_ship_pitch = clampf(_ship_pitch + pitch_input * steer_rate * delta, -1.4, 1.4)
+
+	# Docked: ShipMissions drives position/heading; just keep the hull in sync.
+	if _missions.hold_ship:
+		_vel = Vector3.ZERO
+		_ship_root.global_transform = Transform3D(_ship_basis(), _pos)
+		_engine_glow.light_energy = 0.0
+		return
 
 	var ship_forward := -_ship_basis().z
 
 	if _thrusting and _fuel > 0.0:
-		_vel += ship_forward * thrust_accel * delta
-		_fuel = maxf(0.0, _fuel - fuel_burn_per_sec * delta)
+		_vel += ship_forward * thrust_accel * _throttle * delta
+		_fuel = maxf(0.0, _fuel - fuel_burn_per_sec * _throttle * delta)
 
 	var drag_factor := clampf(1.0 - drag_per_sec * delta, 0.0, 1.0)
 	_vel *= drag_factor
@@ -477,6 +556,9 @@ func _orient_basis() -> Basis:
 
 
 func _update_cameras() -> void:
+	if _vr != null:
+		_vr.sync_origin()   # the head camera is driven by the headset; the player rides the ship
+		return
 	_left_cam.global_transform = Transform3D(_orient_basis(), _camera_center())
 
 
@@ -498,7 +580,12 @@ func _update_hud() -> void:
 	if fill_style != null:
 		var frac := _fuel / fuel_capacity if fuel_capacity > 0.0 else 0.0
 		fill_style.bg_color = Color(0.9, 0.55, 0.2, 0.95) if frac < 0.3 else Color(0.35, 0.9, 0.55, 0.95)
-	_hud_hint.text = "A/D steer  •  W/S pitch  •  SPACE thrust  •  ☀ refills fuel"
+	if _vr != null:
+		_hud_hint.text = "VR: grab the throttle + stick  •  poke the console  •  point + trigger on a planet to travel  •  gaze to scan"
+	elif mouse_flight and not _missions.hold_ship and not OS.has_feature("mobile"):
+		_hud_hint.text = "MOUSE steer  •  HOLD LEFT CLICK / SPACE thrust  •  RIGHT-DRAG look  •  CLICK A PLANET to auto-travel  •  E dock"
+	else:
+		_hud_hint.text = "A/D steer  •  W/S pitch  •  SPACE thrust  •  E dock  •  T travel to gazed planet  •  M mouse mode"
 
 
 func _nearest_planet_text() -> String:
@@ -520,11 +607,27 @@ func _nearest_planet_text() -> String:
 
 # ---- Input ----
 
+# Deadzone + smooth response curve for a cursor axis in -1..1.
+func _mouse_axis(v: float) -> float:
+	var a := absf(v)
+	if a <= mouse_deadzone:
+		return 0.0
+	var t := clampf((a - mouse_deadzone) / (1.0 - mouse_deadzone), 0.0, 1.0)
+	return signf(v) * t * t
+
+
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseMotion and (event.button_mask & MOUSE_BUTTON_MASK_LEFT):
+	# Head-look drag: right button in mouse-flight mode, left button otherwise.
+	var look_mask: int = MOUSE_BUTTON_MASK_RIGHT if mouse_flight else MOUSE_BUTTON_MASK_LEFT
+	if event is InputEventMouseMotion and (event.button_mask & look_mask):
 		_yaw -= event.relative.x * 0.005
 		_pitch = clampf(_pitch - event.relative.y * 0.005, -1.4, 1.4)
+	elif event is InputEventMouseButton and mouse_flight and event.button_index == MOUSE_BUTTON_LEFT:
+		_thrusting = event.pressed
 	elif event is InputEventScreenTouch:
 		_thrusting = event.pressed
 	elif event is InputEventKey and event.keycode == KEY_SPACE:
 		_thrusting = event.pressed
+	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_M:
+		mouse_flight = not mouse_flight
+		_thrusting = false

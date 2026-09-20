@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://cwqgw7q4ay8kq"]
 
-[ext_resource type="Script" path="res://scripts/VRRig.gd" id="1_rig"]
+[ext_resource type="Script" uid="uid://dey6btpge8wh4" path="res://scripts/VRRig.gd" id="1_rig"]
 
-[node name="VRScene" type="Node"]
+[node name="VRScene" type="Node" unique_id=353882758]
 script = ExtResource("1_rig")

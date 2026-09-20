@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://d3plandef001"]
+
+[ext_resource type="Script" path="res://scripts/PlanetaryDefenseController.gd" id="1_defense"]
+
+[node name="PlanetaryDefenseScene" type="Node3D"]
+script = ExtResource("1_defense")
