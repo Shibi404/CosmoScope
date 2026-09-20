@@ -9,8 +9,9 @@ extends Node
 ## max-speed clamp keeps things bounded, and fuel drains while thrusting and
 ## refills near the Sun.
 ##
-## HUD is a set of world-space Label3D / MeshInstance3D nodes anchored in
-## front of the camera, so they always sit in view without per-eye plumbing.
+## HUD is a 2D screen-space overlay on its own CanvasLayer — speed, fuel bar,
+## nearest planet + distance, and the control hint stay fixed on screen no
+## matter what the 3D camera is doing.
 
 const SolarSystemScript := preload("res://scripts/SolarSystem.gd")
 const SpaceEnvScript := preload("res://scripts/SpaceEnvironment.gd")
@@ -43,6 +44,12 @@ const SpaceEnvScript := preload("res://scripts/SpaceEnvironment.gd")
 @export var refuel_radius: float = 8.0
 ## Yaw / pitch rate (rad/s) applied while A/D / W/S are held.
 @export var steer_rate: float = 1.6
+## Collision sphere radius for the ship. Approximate hull half-extent so we can
+## stop the ship at planet surfaces without a full physics setup.
+@export var ship_radius: float = 0.35
+## Extra buffer added to collision so the ship stops just outside the surface
+## rather than intersecting it.
+@export var collision_skin: float = 0.15
 
 # --- Ship visual model (Kenney Space Kit, CC0 — see models/kenney_space_kit/LICENSE.txt) ---
 ## Path to the .glb hull model. Any craft_*.glb from Kenney's Space Kit works.
@@ -84,13 +91,14 @@ var _ship_root: Node3D = null
 var _engine_glow: OmniLight3D = null
 var _engine_core: MeshInstance3D = null
 
-# HUD (world-space, shared by both eyes).
-var _reticle: MeshInstance3D = null
-var _hud_speed: Label3D = null
-var _hud_target: Label3D = null
-var _hud_hint: Label3D = null
-var _fuel_bar_bg: MeshInstance3D = null
-var _fuel_bar_fill: MeshInstance3D = null
+# HUD (2D, screen-space — anchored via CanvasLayer so it stays put regardless
+# of what the 3D camera is doing).
+var _hud_layer: CanvasLayer = null
+var _hud_speed: Label = null
+var _hud_target: Label = null
+var _hud_hint: Label = null
+var _fuel_bar: ProgressBar = null
+var _fuel_bar_label: Label = null
 
 
 func _ready() -> void:
@@ -232,63 +240,83 @@ func _recenter_model(instance: Node3D) -> void:
 		instance.position -= aabb.get_center()
 
 
-# ---- HUD ----
+# ---- HUD (2D screen-space overlay) ----
 
 func _build_hud() -> void:
-	# Small crosshair-like reticle.
-	_reticle = MeshInstance3D.new()
-	var dot := SphereMesh.new()
-	dot.radius = 0.015
-	dot.height = 0.03
-	_reticle.mesh = dot
-	var rmat := StandardMaterial3D.new()
-	rmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	rmat.albedo_color = Color(0.6, 1.0, 0.7, 0.85)
-	rmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	rmat.disable_receive_shadows = true
-	_reticle.material_override = rmat
-	_left_viewport.add_child(_reticle)
+	_hud_layer = CanvasLayer.new()
+	_hud_layer.layer = 10  # under the menu back button (which lives at layer 20)
+	add_child(_hud_layer)
 
-	_hud_speed = _make_hud_label(36)
-	_hud_target = _make_hud_label(32)
-	_hud_hint = _make_hud_label(28)
-	_hud_hint.modulate = Color(1, 1, 1, 0.7)
+	_hud_speed = _make_hud_label(24, Color(0.85, 0.95, 1.0))
+	_hud_speed.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_hud_speed.position = Vector2(120, 16)
+	_hud_speed.size = Vector2(220, 32)
+	_hud_layer.add_child(_hud_speed)
 
-	# Fuel bar: two flat quads (background + fill), unshaded.
-	_fuel_bar_bg = _make_bar(Color(0.15, 0.15, 0.2, 0.7))
-	_fuel_bar_fill = _make_bar(Color(0.35, 0.9, 0.55, 0.95))
+	_hud_target = _make_hud_label(22, Color(0.85, 0.95, 1.0))
+	_hud_target.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_hud_target.position = Vector2(-260, 16)
+	_hud_target.size = Vector2(240, 48)
+	_hud_target.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_hud_layer.add_child(_hud_target)
+
+	# Fuel bar — a proper ProgressBar so the fill is pixel-accurate.
+	var fuel_root := VBoxContainer.new()
+	fuel_root.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	fuel_root.position = Vector2(-180, -70)
+	fuel_root.size = Vector2(360, 44)
+	fuel_root.add_theme_constant_override("separation", 2)
+	_hud_layer.add_child(fuel_root)
+
+	_fuel_bar_label = _make_hud_label(14, Color(0.7, 0.85, 0.95))
+	_fuel_bar_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_fuel_bar_label.custom_minimum_size = Vector2(0, 18)
+	fuel_root.add_child(_fuel_bar_label)
+
+	_fuel_bar = ProgressBar.new()
+	_fuel_bar.min_value = 0.0
+	_fuel_bar.max_value = fuel_capacity
+	_fuel_bar.value = _fuel
+	_fuel_bar.show_percentage = false
+	_fuel_bar.custom_minimum_size = Vector2(360, 18)
+
+	var bg_style := StyleBoxFlat.new()
+	bg_style.bg_color = Color(0.05, 0.07, 0.12, 0.75)
+	bg_style.border_color = Color(0.4, 0.5, 0.7, 0.6)
+	bg_style.border_width_left = 1
+	bg_style.border_width_right = 1
+	bg_style.border_width_top = 1
+	bg_style.border_width_bottom = 1
+	bg_style.corner_radius_top_left = 4
+	bg_style.corner_radius_top_right = 4
+	bg_style.corner_radius_bottom_left = 4
+	bg_style.corner_radius_bottom_right = 4
+	_fuel_bar.add_theme_stylebox_override("background", bg_style)
+
+	var fill_style := StyleBoxFlat.new()
+	fill_style.bg_color = Color(0.35, 0.9, 0.55, 0.95)
+	fill_style.corner_radius_top_left = 4
+	fill_style.corner_radius_top_right = 4
+	fill_style.corner_radius_bottom_left = 4
+	fill_style.corner_radius_bottom_right = 4
+	_fuel_bar.add_theme_stylebox_override("fill", fill_style)
+	fuel_root.add_child(_fuel_bar)
+
+	_hud_hint = _make_hud_label(13, Color(0.7, 0.78, 0.9, 0.75))
+	_hud_hint.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_hud_hint.position = Vector2(-260, -32)
+	_hud_hint.size = Vector2(520, 20)
+	_hud_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_hud_layer.add_child(_hud_hint)
 
 
-
-func _make_hud_label(size: int) -> Label3D:
-	var lbl := Label3D.new()
-	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	lbl.no_depth_test = true
-	lbl.pixel_size = 0.0028
-	lbl.font_size = size
-	lbl.outline_size = 8
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_left_viewport.add_child(lbl)
+func _make_hud_label(size: int, color: Color) -> Label:
+	var lbl := Label.new()
+	lbl.add_theme_font_size_override("font_size", size)
+	lbl.add_theme_color_override("font_color", color)
+	lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	lbl.add_theme_constant_override("outline_size", 4)
 	return lbl
-
-
-func _make_bar(col: Color) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var quad := QuadMesh.new()
-	quad.size = Vector2(1.4, 0.09)
-	mi.mesh = quad
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = col
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.disable_receive_shadows = true
-	mat.no_depth_test = true
-	# QuadMesh faces one direction; disable culling so the bar is visible no
-	# matter which way the transform basis flips it against the camera.
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mi.material_override = mat
-	_left_viewport.add_child(mi)
-	return mi
 
 
 # ---- Menu back button ----
@@ -369,6 +397,8 @@ func _update_ship(delta: float) -> void:
 
 	_pos += _vel * delta
 
+	_resolve_collisions()
+
 	if _sun != null:
 		var d := _pos.distance_to(_sun.global_position)
 		if d < refuel_radius:
@@ -388,6 +418,43 @@ func _update_ship(delta: float) -> void:
 		if mat != null:
 			var e_target: float = 1.8 if (_thrusting and _fuel > 0.0) else 0.4
 			mat.emission_energy_multiplier = lerpf(mat.emission_energy_multiplier, e_target, 0.25)
+
+
+# Simple sphere-vs-sphere collision so the ship stops at planet surfaces
+# instead of flying through them. No physics engine involved — after the
+# velocity integration step we push _pos out to (body_center + surface + skin)
+# for any body we've penetrated, and zero out the velocity component that was
+# aimed into the body so we slide tangentially instead of sticking.
+
+func _resolve_collisions() -> void:
+	if _sun != null:
+		_push_out_of(_sun.global_position, _body_radius(_sun))
+	for p in _planets:
+		if p != null:
+			_push_out_of(p.global_position, _body_radius(p))
+
+
+func _push_out_of(center: Vector3, radius: float) -> void:
+	var min_dist := radius + ship_radius + collision_skin
+	var offset := _pos - center
+	var dist := offset.length()
+	if dist > 0.0001 and dist < min_dist:
+		var n := offset / dist
+		_pos = center + n * min_dist
+		var into := _vel.dot(n)
+		if into < 0.0:
+			_vel -= n * into
+
+
+# Radius of a body in world units, factoring in whatever scale the SolarSystem
+# has applied for the enhanced/true-scale morph. Falls back to the Sun's known
+# radius (2.0) when the body carries no metadata.
+func _body_radius(body: Node3D) -> float:
+	var data: Dictionary = body.get_meta("data", {})
+	var base: float = 2.0
+	if not data.is_empty():
+		base = float(data.get("radius", 2.0))
+	return base * body.scale.x
 
 
 # Head-look basis, expressed in the ship's local frame — pure "look-around"
@@ -422,40 +489,15 @@ func _camera_center() -> Vector3:
 
 
 func _update_hud() -> void:
-	var orient := _orient_basis()
-	var forward := -orient.z
-	var up := orient.y
-	var right := orient.x
-	var cam := _camera_center()
-
-	# Reticle sits ~2m in front of the camera.
-	var center := cam + forward * 2.0
-	_reticle.global_position = center
-
-	# Speed readout, upper-left of the field.
-	_hud_speed.global_position = cam + forward * 2.4 + up * 0.9 - right * 0.9
-	_hud_speed.text = "%.1f u/s" % _vel.length()
-
-	# Nearest planet readout, upper-right.
-	_hud_target.global_position = cam + forward * 2.4 + up * 0.9 + right * 0.9
+	_hud_speed.text = "SPD  %.1f u/s" % _vel.length()
 	_hud_target.text = _nearest_planet_text()
-
-	# Fuel bar, lower-center. Scale the fill quad on X to reflect fuel level.
-	var bar_center := cam + forward * 2.4 - up * 0.85
-	_fuel_bar_bg.global_transform = Transform3D(orient, bar_center)
-	var fill_frac := clampf(_fuel / fuel_capacity, 0.0, 1.0)
-	# Anchor the fill to the left edge of the bar so it drains rightward.
-	var half_w := 1.4 * 0.5
-	var fill_offset := right * (-half_w + half_w * fill_frac)
-	var fill_basis := orient.scaled(Vector3(maxf(fill_frac, 0.0001), 1.0, 1.0))
-	_fuel_bar_fill.global_transform = Transform3D(fill_basis, bar_center + fill_offset)
+	_fuel_bar.value = _fuel
+	_fuel_bar_label.text = "FUEL  %d / %d" % [int(round(_fuel)), int(round(fuel_capacity))]
 	# Fill turns amber below 30% as a low-fuel warning.
-	var mat := _fuel_bar_fill.material_override as StandardMaterial3D
-	if mat != null:
-		mat.albedo_color = Color(0.9, 0.55, 0.2, 0.95) if fill_frac < 0.3 else Color(0.35, 0.9, 0.55, 0.95)
-
-	# Hint text under the bar.
-	_hud_hint.global_position = cam + forward * 2.4 - up * 1.05
+	var fill_style := _fuel_bar.get_theme_stylebox("fill") as StyleBoxFlat
+	if fill_style != null:
+		var frac := _fuel / fuel_capacity if fuel_capacity > 0.0 else 0.0
+		fill_style.bg_color = Color(0.9, 0.55, 0.2, 0.95) if frac < 0.3 else Color(0.35, 0.9, 0.55, 0.95)
 	_hud_hint.text = "A/D steer  •  W/S pitch  •  SPACE thrust  •  ☀ refills fuel"
 
 
