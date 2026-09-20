@@ -107,11 +107,20 @@ func _build_ui() -> void:
 	main_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	add_child(main_vbox)
 
-	# Row 1: AR, VR, Tour
+	# Row 1: Ship (featured), AR, VR, Tour
 	var row1 := HBoxContainer.new()
 	row1.add_theme_constant_override("separation", 12)
 	row1.alignment = BoxContainer.ALIGNMENT_CENTER
 	main_vbox.add_child(row1)
+
+	var ship_panel := _make_mode_button(
+		"🚀 Ship",
+		"Pilot a spaceship\nthrough the system",
+		Color(0.2, 0.35, 0.55),
+		Color(0.12, 0.25, 0.4),
+		"ship"
+	)
+	row1.add_child(ship_panel)
 
 	var ar_panel := _make_mode_button(
 		"🔭 AR Mode",
@@ -140,6 +149,12 @@ func _build_ui() -> void:
 	)
 	row1.add_child(tour_panel)
 
+	# Row 2: Sandbox, Compare, Gravity, Eclipse, Quiz
+	var row2 := HBoxContainer.new()
+	row2.add_theme_constant_override("separation", 12)
+	row2.alignment = BoxContainer.ALIGNMENT_CENTER
+	main_vbox.add_child(row2)
+
 	var sandbox_panel := _make_mode_button(
 		"☄️ Orbit Sandbox",
 		"Slingshot asteroids into\nKepler 3D orbits",
@@ -147,13 +162,7 @@ func _build_ui() -> void:
 		Color(0.32, 0.25, 0.1),
 		"sandbox"
 	)
-	row1.add_child(sandbox_panel)
-
-	# Row 2: Compare, Gravity, Eclipse, Quiz
-	var row2 := HBoxContainer.new()
-	row2.add_theme_constant_override("separation", 12)
-	row2.alignment = BoxContainer.ALIGNMENT_CENTER
-	main_vbox.add_child(row2)
+	row2.add_child(sandbox_panel)
 
 	var comp_panel := _make_mode_button(
 		"⚖️ Compare",

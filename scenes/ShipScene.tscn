@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bvh36lwgwmkve"]
+
+[ext_resource type="Script" path="res://scripts/ShipRig.gd" id="1_ship"]
+
+[node name="ShipScene" type="Node"]
+script = ExtResource("1_ship")

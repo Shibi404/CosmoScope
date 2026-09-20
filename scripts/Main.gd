@@ -4,6 +4,7 @@ extends Node
 
 const MENU_SCENE := "res://scenes/Menu.tscn"
 const VR_SCENE := "res://scenes/VRScene.tscn"
+const SHIP_SCENE := "res://scenes/ShipScene.tscn"
 const AR_SCENE := "res://scenes/ARScene.tscn"
 const TOUR_SCENE := "res://scenes/TourScene.tscn"
 const COMPARE_SCENE := "res://scenes/CompareScene.tscn"
@@ -67,6 +68,8 @@ func _on_mode_selected(mode: String) -> void:
 	match mode:
 		"vr":
 			_load_scene(VR_SCENE)
+		"ship":
+			_load_scene(SHIP_SCENE)
 		"ar":
 			_load_scene(AR_SCENE)
 		"tour":
