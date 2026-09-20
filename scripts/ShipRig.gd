@@ -368,9 +368,13 @@ func _update_orientation(delta: float) -> void:
 
 
 func _update_ship(delta: float) -> void:
-	# Ship hull orientation lags head orientation at a bounded angular rate.
-	_ship_yaw = _step_toward_angle(_ship_yaw, _yaw, ship_turn_rate * delta)
-	_ship_pitch = clampf(_step_toward(_ship_pitch, _pitch, ship_turn_rate * delta), -1.4, 1.4)
+	# Steering rule: the ship only turns toward the head look direction WHILE
+	# you're holding thrust. Free-look with the mouse (or gyro on mobile) is
+	# pure camera pan; you commit to a new heading by pointing where you want
+	# to go and pressing thrust — "look and burn".
+	if _thrusting and _fuel > 0.0:
+		_ship_yaw = _step_toward_angle(_ship_yaw, _yaw, ship_turn_rate * delta)
+		_ship_pitch = clampf(_step_toward(_ship_pitch, _pitch, ship_turn_rate * delta), -1.4, 1.4)
 
 	var ship_forward := -_ship_basis().z
 
@@ -482,7 +486,7 @@ func _update_hud() -> void:
 
 	# Hint text under the bar.
 	_hud_hint.global_position = cam + forward * 2.4 - up * 1.05
-	_hud_hint.text = "HOLD to thrust  •  approach ☀ to refuel"
+	_hud_hint.text = "LOOK to aim  •  HOLD to thrust & steer  •  ☀ refills fuel"
 
 
 func _nearest_planet_text() -> String:
