@@ -1,25 +1,22 @@
 extends Node
-## Spaceship VR rig: you pilot a ship through the solar system.
+## Spaceship rig: you pilot a ship through the solar system.
 ##
-## Reuses the DIY stereo eye pattern from VRRig (two SubViewports through a
-## barrel-distortion shader, sharing the root World3D). Head orientation comes
-## from the gyroscope (mouse-drag on desktop) and steers the ship — thrust is
-## applied along the look direction while the Cardboard button (screen tap /
-## Space) is held down. Arcade drag decays velocity so controls stay forgiving,
-## a max-speed clamp keeps things bounded, and fuel drains while thrusting and
-## refills as you approach the Sun.
+## Renders through a single fullscreen SubViewport (no Cardboard split-screen,
+## no barrel-distortion shader — that layout belongs to the observer VRRig).
+## Head-look is driven by the gyroscope on mobile / left-mouse drag on desktop
+## and pans the camera relative to the ship. A/D yaw the hull, W/S pitch it,
+## and Space thrusts along ship-forward. Arcade drag decays velocity, a
+## max-speed clamp keeps things bounded, and fuel drains while thrusting and
+## refills near the Sun.
 ##
-## HUD is rendered via world-space Label3D/MeshInstance3D nodes anchored a fixed
-## distance in front of the ship, so both eye cameras see the same overlay
-## without any per-eye UI plumbing.
+## HUD is a set of world-space Label3D / MeshInstance3D nodes anchored in
+## front of the camera, so they always sit in view without per-eye plumbing.
 
 const SolarSystemScript := preload("res://scripts/SolarSystem.gd")
 const SpaceEnvScript := preload("res://scripts/SpaceEnvironment.gd")
-const LENS_SHADER := preload("res://shaders/lens_distortion.gdshader")
 
-# --- Stereo / head-look tuning (mirrors VRRig defaults) ---
-@export var ipd: float = 0.064
-@export var eye_fov: float = 80.0
+# --- Head-look tuning ---
+@export var fov: float = 75.0
 @export var use_gyroscope: bool = true
 @export_range(0, 2) var gyro_yaw_axis: int = 1
 @export_range(0, 2) var gyro_pitch_axis: int = 0
@@ -63,12 +60,10 @@ const LENS_SHADER := preload("res://shaders/lens_distortion.gdshader")
 ## Camera height above the ship, along the ship's local +Y.
 @export var chase_up: float = 1.4
 
-var _left_viewport: SubViewport
-var _right_viewport: SubViewport
+var _left_viewport: SubViewport   # single fullscreen viewport (name kept so
+                                  # existing add_child call sites stay stable)
 var _left_cam: Camera3D
-var _right_cam: Camera3D
 var _left_rect: TextureRect
-var _right_rect: TextureRect
 
 var _solar: Node3D = null
 var _planets: Array[Node3D] = []
@@ -101,7 +96,7 @@ var _fuel_bar_fill: MeshInstance3D = null
 func _ready() -> void:
 	_pos = spawn_position
 	_fuel = fuel_capacity
-	_build_eyes()
+	_build_view()
 	_build_world()
 	_build_ship_model()
 	_build_hud()
@@ -110,42 +105,23 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_layout)
 
 
-# ---- Stereo rendering plumbing (parallel to VRRig) ----
+# ---- Rendering plumbing (single fullscreen viewport + camera) ----
 
-func _build_eyes() -> void:
-	_left_viewport = _make_eye_viewport()
-	_left_cam = _make_eye_camera(_left_viewport)
-	_right_viewport = _make_eye_viewport()
-	_right_cam = _make_eye_camera(_right_viewport)
-	_left_rect = _make_eye_rect(_left_viewport)
-	_right_rect = _make_eye_rect(_right_viewport)
+func _build_view() -> void:
+	_left_viewport = SubViewport.new()
+	_left_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	_left_viewport.msaa_3d = Viewport.MSAA_2X
+	add_child(_left_viewport)
 
+	_left_cam = Camera3D.new()
+	_left_cam.fov = fov
+	_left_cam.current = true
+	_left_viewport.add_child(_left_cam)
 
-func _make_eye_viewport() -> SubViewport:
-	var vp := SubViewport.new()
-	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	vp.msaa_3d = Viewport.MSAA_2X
-	add_child(vp)
-	return vp
-
-
-func _make_eye_camera(vp: SubViewport) -> Camera3D:
-	var cam := Camera3D.new()
-	cam.fov = eye_fov
-	cam.current = true
-	vp.add_child(cam)
-	return cam
-
-
-func _make_eye_rect(vp: SubViewport) -> TextureRect:
-	var rect := TextureRect.new()
-	rect.texture = vp.get_texture()
-	rect.stretch_mode = TextureRect.STRETCH_SCALE
-	var mat := ShaderMaterial.new()
-	mat.shader = LENS_SHADER
-	rect.material = mat
-	add_child(rect)
-	return rect
+	_left_rect = TextureRect.new()
+	_left_rect.texture = _left_viewport.get_texture()
+	_left_rect.stretch_mode = TextureRect.STRETCH_SCALE
+	add_child(_left_rect)
 
 
 func _build_world() -> void:
@@ -164,15 +140,11 @@ func _layout() -> void:
 	var view := get_viewport().get_visible_rect().size
 	var full_w := int(view.x)
 	var full_h := int(view.y)
-	var half := int(full_w / 2)
-	if half <= 0:
+	if full_w <= 0 or full_h <= 0:
 		return
-	_left_viewport.size = Vector2i(half, full_h)
-	_right_viewport.size = Vector2i(full_w - half, full_h)
-	_left_rect.position = Vector2(0, 0)
-	_left_rect.size = Vector2(half, full_h)
-	_right_rect.position = Vector2(half, 0)
-	_right_rect.size = Vector2(full_w - half, full_h)
+	_left_viewport.size = Vector2i(full_w, full_h)
+	_left_rect.position = Vector2.ZERO
+	_left_rect.size = Vector2(full_w, full_h)
 
 
 # ---- Ship hull (Kenney .glb model, third-person) ----
@@ -438,13 +410,7 @@ func _orient_basis() -> Basis:
 
 
 func _update_cameras() -> void:
-	var orient := _orient_basis()
-	var right := orient.x
-	var cam_center := _camera_center()
-	var left_pos := cam_center - right * (ipd * 0.5)
-	var right_pos := cam_center + right * (ipd * 0.5)
-	_left_cam.global_transform = Transform3D(orient, left_pos)
-	_right_cam.global_transform = Transform3D(orient, right_pos)
+	_left_cam.global_transform = Transform3D(_orient_basis(), _camera_center())
 
 
 # Cameras sit chase_back units behind the ship and chase_up units above it,
