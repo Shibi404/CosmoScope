@@ -3,10 +3,14 @@ extends Node
 
 # This is the autoload that is set up when enabling the plugin
 # It also communicates between ARCore and Godot
-var arcore_interface : ARCoreInterface
+# NOTE: ARCoreInterface is a native class only registered on Android builds,
+# so we keep this untyped and guard with ClassDB so the script parses on desktop.
+var arcore_interface
 
 func _enter_tree():
-	arcore_interface = ARCoreInterface.new()
+	if not ClassDB.class_exists("ARCoreInterface"):
+		return
+	arcore_interface = ClassDB.instantiate("ARCoreInterface")
 
 	if arcore_interface:
 		XRServer.add_interface(arcore_interface)
