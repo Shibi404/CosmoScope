@@ -44,10 +44,8 @@ const LENS_SHADER := preload("res://shaders/lens_distortion.gdshader")
 @export var solar_refuel_per_sec: float = 20.0
 ## Distance from the Sun (world units) at which refueling starts.
 @export var refuel_radius: float = 8.0
-## Max angular rate (rad/s) at which the ship hull follows head look.
-## Cameras still track head instantly; the hull lags, so glancing sideways
-## reveals the wing before the ship catches up.
-@export var ship_turn_rate: float = 2.4
+## Yaw / pitch rate (rad/s) applied while A/D / W/S are held.
+@export var steer_rate: float = 1.6
 
 # --- Ship visual model (Kenney Space Kit, CC0 — see models/kenney_space_kit/LICENSE.txt) ---
 ## Path to the .glb hull model. Any craft_*.glb from Kenney's Space Kit works.
@@ -368,13 +366,21 @@ func _update_orientation(delta: float) -> void:
 
 
 func _update_ship(delta: float) -> void:
-	# Steering rule: the ship only turns toward the head look direction WHILE
-	# you're holding thrust. Free-look with the mouse (or gyro on mobile) is
-	# pure camera pan; you commit to a new heading by pointing where you want
-	# to go and pressing thrust — "look and burn".
-	if _thrusting and _fuel > 0.0:
-		_ship_yaw = _step_toward_angle(_ship_yaw, _yaw, ship_turn_rate * delta)
-		_ship_pitch = clampf(_step_toward(_ship_pitch, _pitch, ship_turn_rate * delta), -1.4, 1.4)
+	# Steering: A/D yaw the ship left/right, W/S pitch the nose up/down.
+	# Head-look stays a pure camera — you steer with the keys, look with the
+	# mouse/gyro.
+	var yaw_input := 0.0
+	var pitch_input := 0.0
+	if Input.is_physical_key_pressed(KEY_A):
+		yaw_input += 1.0
+	if Input.is_physical_key_pressed(KEY_D):
+		yaw_input -= 1.0
+	if Input.is_physical_key_pressed(KEY_W):
+		pitch_input -= 1.0
+	if Input.is_physical_key_pressed(KEY_S):
+		pitch_input += 1.0
+	_ship_yaw += yaw_input * steer_rate * delta
+	_ship_pitch = clampf(_ship_pitch + pitch_input * steer_rate * delta, -1.4, 1.4)
 
 	var ship_forward := -_ship_basis().z
 
@@ -412,8 +418,9 @@ func _update_ship(delta: float) -> void:
 			mat.emission_energy_multiplier = lerpf(mat.emission_energy_multiplier, e_target, 0.25)
 
 
-# Head-look basis (drives the two eye cameras).
-func _orient_basis() -> Basis:
+# Head-look basis, expressed in the ship's local frame — pure "look-around"
+# on top of whatever direction the ship is facing.
+func _head_basis() -> Basis:
 	return Basis(Vector3.UP, _yaw) * Basis(Vector3.RIGHT, _pitch)
 
 
@@ -422,15 +429,12 @@ func _ship_basis() -> Basis:
 	return Basis(Vector3.UP, _ship_yaw) * Basis(Vector3.RIGHT, _ship_pitch)
 
 
-func _step_toward(cur: float, target: float, max_step: float) -> float:
-	return cur + clampf(target - cur, -max_step, max_step)
-
-
-# Wrap the angular difference into (-PI, PI] before clamping so a 179°→−179°
-# hop takes the short way around.
-func _step_toward_angle(cur: float, target: float, max_step: float) -> float:
-	var diff := wrapf(target - cur, -PI, PI)
-	return cur + clampf(diff, -max_step, max_step)
+# Camera basis in world coords: head-look composed on top of ship orientation.
+# With the head at neutral, this equals the ship's basis (view looks straight
+# down the ship's forward), so rotating the ship rotates the view too. Mouse /
+# gyro just adds a local pan on top.
+func _orient_basis() -> Basis:
+	return _ship_basis() * _head_basis()
 
 
 func _update_cameras() -> void:
@@ -486,7 +490,7 @@ func _update_hud() -> void:
 
 	# Hint text under the bar.
 	_hud_hint.global_position = cam + forward * 2.4 - up * 1.05
-	_hud_hint.text = "LOOK to aim  •  HOLD to thrust & steer  •  ☀ refills fuel"
+	_hud_hint.text = "A/D steer  •  W/S pitch  •  SPACE thrust  •  ☀ refills fuel"
 
 
 func _nearest_planet_text() -> String:
