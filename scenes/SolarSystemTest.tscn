@@ -1,16 +1,16 @@
-[gd_scene load_steps=4 format=3 uid="uid://css0test0phase0"]
+[gd_scene format=3 uid="uid://bsd3vvi0oeqp2"]
 
-[ext_resource type="Script" path="res://scripts/SolarSystem.gd" id="1_solar"]
-[ext_resource type="Script" path="res://scripts/DebugCamera.gd" id="2_cam"]
-[ext_resource type="Script" path="res://scripts/SpaceEnvironment.gd" id="3_env"]
+[ext_resource type="Script" uid="uid://c4ke7rtukev58" path="res://scripts/SolarSystem.gd" id="1_solar"]
+[ext_resource type="Script" uid="uid://burpcggysohkt" path="res://scripts/DebugCamera.gd" id="2_cam"]
+[ext_resource type="Script" uid="uid://mlt0ywedpm02" path="res://scripts/SpaceEnvironment.gd" id="3_env"]
 
-[node name="SolarSystemTest" type="Node3D"]
+[node name="SolarSystemTest" type="Node3D" unique_id=182164057]
 
-[node name="SolarSystem" type="Node3D" parent="."]
+[node name="SolarSystem" type="Node3D" parent="." unique_id=482185970]
 script = ExtResource("1_solar")
 
-[node name="Camera3D" type="Camera3D" parent="."]
+[node name="Camera3D" type="Camera3D" parent="." unique_id=447596216]
 script = ExtResource("2_cam")
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1981739387]
 script = ExtResource("3_env")
