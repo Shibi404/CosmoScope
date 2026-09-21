@@ -50,7 +50,7 @@ var scan_ray_override: Dictionary = {}
 var vr_drive: Vector2 = Vector2.ZERO
 var dialog_open: bool:
 	get:
-		return _ap != null and _ap.confirm_open
+		return _ap != null and (_ap.confirm_open or _ap.choice_open or _ap.permission_open)
 var _gaze_objects: Array = []
 var _surface_finds: Array = []
 var _last_flash: float = 0.0
@@ -300,6 +300,35 @@ func _tick_scanner(delta: float) -> void:
 		_scan_target(_gaze_body)
 		_dwell = -1.5   # brief cooldown so the card isn't re-triggered instantly
 
+	if _ap != null and _gaze_body != null and _targets.has(_gaze_body):
+		_ap.update_planet_targeting(delta, _gaze_body)
+
+
+func dock_and_start_mission(b: Node3D) -> void:
+	if b == null:
+		return
+	if _ap != null:
+		_ap.stop()
+	docked = true
+	_dock_body = b
+	var c: Vector3 = _dock_body.global_position
+	var orbit_r: float = _radius(_dock_body) + rig.ship_radius + rig.collision_skin + 0.6
+	var rel: Vector3 = rig._pos - c
+	if rel.length() < 0.1:
+		rel = Vector3.FORWARD * orbit_r
+	else:
+		rel = rel.normalized() * orbit_r
+	_dock_angle = atan2(rel.z, rel.x)
+	_dock_r = orbit_r
+	_dock_y = rel.y
+	rig._pos = c + rel
+	rig._vel = Vector3.ZERO
+	_toast("Arrived at %s" % _pname(_dock_body))
+	vr_event("dock")
+	_refresh_menu()
+	if MissionData.MISSIONS.has(_pname(_dock_body)) and not _completed.has(_pname(_dock_body)):
+		start_mission()
+
 
 func _gaze_title(n: Node3D) -> String:
 	if n.has_meta("gaze_title"):
@@ -501,7 +530,8 @@ func _tick_mission(delta: float) -> void:
 	if _m.is_empty() or _m_body == null or _act == null:
 		return
 	var dist: float = rig._pos.distance_to(_m_body.global_position)
-	if not rover_hold and dist > ABORT_DIST:
+	var max_allowed: float = maxf(ABORT_DIST, _radius(_m_body) + 20.0)
+	if not rover_hold and dist > max_allowed:
 		_abort_mission("too far from %s" % _m_name)
 		return
 	_act.tick(delta)

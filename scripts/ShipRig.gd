@@ -96,6 +96,8 @@ var _ship_yaw: float = 0.0   # hull yaw (drives thrust + hull mesh; lags head)
 var _ship_pitch: float = 0.0 # hull pitch
 var _thrusting: bool = false
 var _fuel: float = 0.0
+var fuel_refill_timer: float = 0.0
+var is_refilling: bool = false
 
 # Procedural ship hull (parented to _ship_root, moved/rotated each frame).
 var _ship_root: Node3D = null
@@ -467,6 +469,23 @@ func _update_ship(delta: float) -> void:
 		_vel += ship_forward * thrust_accel * _throttle * delta
 		_fuel = maxf(0.0, _fuel - fuel_burn_per_sec * _throttle * delta)
 
+	# Auto refill system: when fuel reaches 0, wait 5 seconds and auto-refill to 100%
+	if _fuel <= 0.001:
+		if not is_refilling:
+			is_refilling = true
+			fuel_refill_timer = 5.0
+			if _missions != null and _missions.has_method("_toast"):
+				_missions._toast("⛽ OUT OF FUEL — Auto-refilling in 5 seconds...")
+		else:
+			fuel_refill_timer -= delta
+			if fuel_refill_timer <= 0.0:
+				_fuel = fuel_capacity
+				is_refilling = false
+				if _missions != null and _missions.has_method("_toast"):
+					_missions._toast("⚡ FUEL REFILLED 100%!")
+	elif _fuel > 0.0:
+		is_refilling = false
+
 	var drag_factor := clampf(1.0 - drag_per_sec * delta, 0.0, 1.0)
 	_vel *= drag_factor
 
@@ -574,18 +593,21 @@ func _update_hud() -> void:
 	_hud_speed.text = "SPD  %.1f u/s" % _vel.length()
 	_hud_target.text = _nearest_planet_text()
 	_fuel_bar.value = _fuel
-	_fuel_bar_label.text = "FUEL  %d / %d" % [int(round(_fuel)), int(round(fuel_capacity))]
+	if is_refilling:
+		_fuel_bar_label.text = "REFILLING IN %d s" % int(ceil(fuel_refill_timer))
+	else:
+		_fuel_bar_label.text = "FUEL  %d / %d" % [int(round(_fuel)), int(round(fuel_capacity))]
 	# Fill turns amber below 30% as a low-fuel warning.
 	var fill_style := _fuel_bar.get_theme_stylebox("fill") as StyleBoxFlat
 	if fill_style != null:
 		var frac := _fuel / fuel_capacity if fuel_capacity > 0.0 else 0.0
 		fill_style.bg_color = Color(0.9, 0.55, 0.2, 0.95) if frac < 0.3 else Color(0.35, 0.9, 0.55, 0.95)
 	if _vr != null:
-		_hud_hint.text = "VR: grab the throttle + stick  •  poke the console  •  point + trigger on a planet to travel  •  gaze to scan"
+		_hud_hint.text = "VR: grab throttle + stick  •  POINT AT PLANET to choose AUTO PILOT / MANUAL  •  gaze to scan"
 	elif mouse_flight and not _missions.hold_ship and not OS.has_feature("mobile"):
-		_hud_hint.text = "MOUSE steer  •  HOLD LEFT CLICK / SPACE thrust  •  RIGHT-DRAG look  •  CLICK A PLANET to auto-travel  •  E dock"
+		_hud_hint.text = "MOUSE steer  •  HOLD LEFT CLICK / SPACE thrust  •  POINT AT PLANET to choose AUTO PILOT / MANUAL  •  E dock"
 	else:
-		_hud_hint.text = "A/D steer  •  W/S pitch  •  SPACE thrust  •  E dock  •  T travel to gazed planet  •  M mouse mode"
+		_hud_hint.text = "A/D steer  •  W/S pitch  •  SPACE thrust  •  POINT AT PLANET for AUTO PILOT / MANUAL  •  E dock  •  M mouse mode"
 
 
 func _nearest_planet_text() -> String:
